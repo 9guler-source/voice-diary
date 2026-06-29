@@ -111,17 +111,19 @@ export default function SessionPage() {
   const total = questions.length
 
   // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 1000ms 후 새 문항 읽기
-  // cleanup에서도 cancel하여 stale effect가 남아있어도 재생 차단
+  // speak(text, questionIdx) 로 utterance에 인덱스를 심어
+  // onstart/onboundary에서 stale utterance를 자기 자신이 취소함
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
-    stopTTS()                          // pause()+cancel() 즉시 실행
+    stopTTS()                              // expectedIdx=-1, pause()+cancel()
+    const capturedIdx = currentIdx
     const id = setTimeout(() => {
-      stopTTS()                        // 재생 직전 한 번 더 확인
-      speak(currentQ.content)
+      stopTTS()                            // 재생 직전 한 번 더
+      speak(currentQ.content, capturedIdx) // questionIdx 전달 → 가드 활성화
     }, 1000)
     return () => {
       clearTimeout(id)
-      stopTTS()                        // cleanup 시에도 cancel
+      stopTTS()                            // cleanup 시에도 cancel
     }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak, stopTTS])
 
