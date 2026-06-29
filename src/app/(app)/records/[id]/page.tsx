@@ -1,16 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/database.types'
+import { createSupabaseServer } from '@/lib/supabase-server'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 
 type Props = { params: { id: string } }
 
-async function getSession(id: string) {
-  const supabase = createClient<Database, 'voice_diary'>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { db: { schema: 'voice_diary' } }
-  )
+async function getSessionData(id: string) {
+  const supabase = createSupabaseServer()
+
   const { data: session } = await supabase
     .from('sessions')
     .select('id, recorded_at, status')
@@ -49,7 +45,7 @@ function formatDate(iso: string) {
 }
 
 export default async function SessionDetailPage({ params }: Props) {
-  const data = await getSession(params.id)
+  const data = await getSessionData(params.id)
 
   if (!data) {
     return (
@@ -81,11 +77,7 @@ export default async function SessionDetailPage({ params }: Props) {
               <p className="text-sm font-medium text-deep mb-3">{r.question.content}</p>
             )}
             {r.audio_url && (
-              <audio
-                controls
-                src={r.audio_url}
-                className="w-full h-10 rounded-lg"
-              />
+              <audio controls src={r.audio_url} className="w-full h-10 rounded-lg" />
             )}
             {r.stt_text && (
               <p className="mt-3 text-xs text-mid bg-cream rounded-lg p-3 leading-relaxed">

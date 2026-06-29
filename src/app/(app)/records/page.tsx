@@ -1,14 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/database.types'
+import { createSupabaseServer } from '@/lib/supabase-server'
 import Link from 'next/link'
 import { Mic, ChevronRight } from 'lucide-react'
 
 async function getSessions() {
-  const supabase = createClient<Database, 'voice_diary'>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { db: { schema: 'voice_diary' } }
-  )
+  const supabase = createSupabaseServer()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return []
 
