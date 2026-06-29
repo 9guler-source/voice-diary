@@ -37,9 +37,26 @@ export async function saveRecording(recording: {
 }): Promise<{ error?: string }> {
   const supabase = await createSupabaseServer()
 
+  // is_free_talk=true 인 경우 DB에서 실제 question_id를 조회해 FK 위반 방지
+  // (코드의 FINAL_QUESTION.id가 DB serial과 다를 수 있음)
+  let questionId = recording.questionId
+  if (recording.isFreeTalk) {
+    const { data: freeQ, error: fqErr } = await supabase
+      .from('questions')
+      .select('id')
+      .eq('is_common', true)
+      .single()
+    if (fqErr || !freeQ) {
+      console.error('[saveRecording] free talk question 조회 실패:', fqErr?.message)
+    } else {
+      questionId = freeQ.id
+      console.log('[saveRecording] free talk question_id resolved:', questionId)
+    }
+  }
+
   const { error } = await supabase.from('recordings').insert({
     session_id: recording.sessionId,
-    question_id: recording.questionId,
+    question_id: questionId,
     question_order: recording.questionOrder,
     audio_url: recording.audioUrl,
     duration_sec: recording.durationSec,
@@ -49,7 +66,12 @@ export async function saveRecording(recording: {
     stt_text: recording.sttText,
   })
 
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('[saveRecording] INSERT error:', error.message, error.code, error.hint)
+    return { error: error.message }
+  }
+
+  console.log('[saveRecording] saved order:', recording.questionOrder, 'free_talk:', recording.isFreeTalk, 'audio_url:', recording.audioUrl)
   return {}
 }
 

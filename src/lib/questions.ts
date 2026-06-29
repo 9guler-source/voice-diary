@@ -77,8 +77,9 @@ export const QUESTIONS: Question[] = [
   { id: 70, category: '현재·일상',   content: '오늘 아침 무엇을 먹었고 어떤 하루였나요?' },
 ]
 
+// DB voice_diary.questions serial: 70개 일반 문항 + 1개 자유(is_common=true) = id 71
 export const FINAL_QUESTION: Question = {
-  id: 100,
+  id: 71,
   category: '자유',
   content: '지금 남기고 싶은 이야기를 편하게 자유롭게 말해 주세요.',
 }

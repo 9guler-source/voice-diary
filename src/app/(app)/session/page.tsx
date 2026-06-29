@@ -110,11 +110,14 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 300ms 후 새 문항 읽기
+  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 500ms 후 새 문항 읽기
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
     window.speechSynthesis?.cancel()
-    const id = setTimeout(() => speak(currentQ.content), 300)
+    const id = setTimeout(() => {
+      window.speechSynthesis?.cancel()
+      speak(currentQ.content)
+    }, 500)
     return () => {
       clearTimeout(id)
       window.speechSynthesis?.cancel()
@@ -132,24 +135,21 @@ export default function SessionPage() {
     const result = await stopRec()
     if (sttEnabled) stopSTT()
 
-    const { data: { session } } = await supabase.auth.getSession()
+    console.log('[SESSION] blob size:', result.blob.size, 'bytes / duration:', result.durationSec, 's')
+
     const filePath = `${profileId}/${sessionId}/${currentIdx + 1}.webm`
     let audioUrl: string | null = null
 
-    if (session) {
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('voice-diary')
-        .upload(filePath, result.blob, { contentType: 'audio/webm' })
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('voice-diary')
+      .upload(filePath, result.blob, { contentType: 'audio/webm' })
 
-      if (uploadError) {
-        console.error('[SESSION] storage upload error:', uploadError.message)
-      } else if (uploadData) {
-        const { data: urlData } = supabase.storage.from('voice-diary').getPublicUrl(filePath)
-        audioUrl = urlData.publicUrl
-        console.log('[SESSION] audioUrl saved:', audioUrl)
-      }
-    } else {
-      console.warn('[SESSION] auth session 없음 — storage upload 건너뜀')
+    if (uploadError) {
+      console.error('[SESSION] storage upload error:', uploadError.message)
+    } else if (uploadData) {
+      const { data: urlData } = supabase.storage.from('voice-diary').getPublicUrl(filePath)
+      audioUrl = urlData.publicUrl
+      console.log('[SESSION] audioUrl saved:', audioUrl)
     }
 
     const { error: saveErr } = await saveRecording({
