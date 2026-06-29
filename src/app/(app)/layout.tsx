@@ -8,8 +8,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session) redirect('/login')
 
   return (
-    <div className="min-h-screen bg-cream pb-20">
+    <div className="min-h-screen bg-cream pb-24">
       {children}
+      <footer className="py-3 text-center">
+        <p className="text-xs text-muted/50">© 2026 Young Sohk Song (宋映錫 · 송영석). All rights reserved.</p>
+      </footer>
       <TabBar />
     </div>
   )

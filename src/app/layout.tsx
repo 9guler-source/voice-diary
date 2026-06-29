@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '내 목소리 일기',
-  description: '소중한 목소리와 추억을 기록하세요',
+  title: '기억을 붙잡아 — 찬란했던 나의 이야기',
+  description: '기억이 흐려지기 전에, 지금 목소리로 남겨두세요.',
 }
 
 export default function RootLayout({
