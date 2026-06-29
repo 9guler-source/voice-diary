@@ -37,6 +37,9 @@ export default function SignupForm() {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
+      options: {
+        data: { name: data.name },  // 트리거가 raw_user_meta_data->>'name' 으로 읽음
+      },
     })
     if (authError || !authData.user) {
       setError(authError?.message ?? '회원가입에 실패했습니다.')
@@ -44,13 +47,9 @@ export default function SignupForm() {
       return
     }
 
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({ auth_user_id: authData.user.id, name: data.name })
-
-    if (profileError) {
-      setError('프로필 생성에 실패했습니다. 다시 시도해 주세요.')
-      setLoading(false)
+    // 이메일 인증 대기 중인 경우 (session == null)
+    if (!authData.session) {
+      router.push('/login?notice=check-email')
       return
     }
 
