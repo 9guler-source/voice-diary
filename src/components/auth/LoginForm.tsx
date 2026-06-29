@@ -26,15 +26,31 @@ export default function LoginForm() {
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     setError('')
-    const { error: authError } = await supabase.auth.signInWithPassword({
+
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: data.email,
       password: data.password,
     })
+
+    console.log('[LoginForm] signInWithPassword →', {
+      userId: authData.user?.id ?? null,
+      sessionExpires: authData.session?.expires_at ?? null,
+      error: authError?.message ?? null,
+    })
+
     if (authError) {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
-    } else {
-      router.push('/home')
+      setLoading(false)
+      return
     }
+
+    // 쿠키가 실제로 설정됐는지 확인
+    const cookieNames = document.cookie.split(';').map((c) => c.trim().split('=')[0])
+    const supabaseCookies = cookieNames.filter((n) => n.startsWith('sb-'))
+    console.log('[LoginForm] Supabase 세션 쿠키:', supabaseCookies)
+
+    router.refresh()   // 서버 컴포넌트(layout) 캐시 무효화
+    router.push('/home')
     setLoading(false)
   }
 
@@ -46,6 +62,7 @@ export default function LoginForm() {
           {...register('email')}
           type="email"
           placeholder="이메일 주소"
+          autoComplete="email"
           className="w-full px-4 py-3 rounded-xl border border-muted/40 bg-warm-white focus:outline-none focus:ring-2 focus:ring-amber text-deep placeholder:text-muted"
         />
         {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
@@ -56,6 +73,7 @@ export default function LoginForm() {
           {...register('password')}
           type="password"
           placeholder="비밀번호"
+          autoComplete="new-password"
           className="w-full px-4 py-3 rounded-xl border border-muted/40 bg-warm-white focus:outline-none focus:ring-2 focus:ring-amber text-deep placeholder:text-muted"
         />
         {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
