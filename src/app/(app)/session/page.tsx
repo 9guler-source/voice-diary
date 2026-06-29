@@ -34,7 +34,10 @@ export default function SessionPage() {
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [maxDecibelLive, setMaxDecibelLive] = useState(0)
+  const [recElapsed, setRecElapsed] = useState(0)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const recTimerRef = useRef<NodeJS.Timeout | null>(null)
   const starterAbortRef = useRef(false)
 
   const { recording, decibel, start: startRec, stop: stopRec } = useRecording()
@@ -137,6 +140,24 @@ export default function SessionPage() {
   useEffect(() => {
     resetSTT()
   }, [currentIdx, resetSTT])
+
+  // 녹음 중 경과 시간 및 최대 dB 추적
+  useEffect(() => {
+    if (recording) {
+      setMaxDecibelLive(0)
+      setRecElapsed(0)
+      recTimerRef.current = setInterval(() => setRecElapsed((s) => s + 1), 1000)
+    } else {
+      if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null }
+    }
+    return () => { if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null } }
+  }, [recording])
+
+  useEffect(() => {
+    if (recording && decibel > 0) {
+      setMaxDecibelLive((prev) => Math.max(prev, decibel))
+    }
+  }, [decibel, recording])
 
   const handleStop = useCallback(async () => {
     if (!recording || !sessionId || !currentQ) return
@@ -309,7 +330,13 @@ export default function SessionPage() {
         )}
       </div>
 
-      <WaveformCanvas decibel={decibel} active={recording} />
+      <WaveformCanvas
+        decibel={decibel}
+        active={recording}
+        info={recording
+          ? `현재 ${Math.round(decibel)}dB · 최대 ${Math.round(maxDecibelLive)}dB · ${Math.floor(recElapsed / 60)}:${String(recElapsed % 60).padStart(2, '0')}`
+          : undefined}
+      />
 
       {/* STT 자막 */}
       <SubtitlePanel

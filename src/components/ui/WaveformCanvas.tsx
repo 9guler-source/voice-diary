@@ -5,9 +5,10 @@ import { useEffect, useRef } from 'react'
 type Props = {
   decibel: number
   active: boolean
+  info?: string
 }
 
-export default function WaveformCanvas({ decibel, active }: Props) {
+export default function WaveformCanvas({ decibel, active, info }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const historyRef = useRef<number[]>(new Array(60).fill(0))
 
@@ -34,17 +35,24 @@ export default function WaveformCanvas({ decibel, active }: Props) {
       const y = (height - barH) / 2
       ctx.fillStyle = active ? '#E8A840' : '#B8A48A'
       ctx.beginPath()
-      ctx.roundRect(x + 1, y, barW - 2, barH || 2, 2)
+      ctx.roundRect(x + 1, y, barW - 2, barH || 2, 1)
       ctx.fill()
     })
   }, [decibel, active])
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={300}
-      height={80}
-      className="w-full rounded-xl"
-    />
+    <div style={{ padding: '4px 8px' }}>
+      <canvas
+        ref={canvasRef}
+        width={300}
+        height={8}
+        className="w-full rounded"
+      />
+      {info && (
+        <p className="text-center text-muted mt-0.5" style={{ fontSize: 11 }}>
+          {info}
+        </p>
+      )}
+    </div>
   )
 }
