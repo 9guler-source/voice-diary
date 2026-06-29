@@ -28,6 +28,7 @@ export default function SessionPage() {
   const [elapsed, setElapsed] = useState(0)
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [initError, setInitError] = useState('')
   const [saving, setSaving] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -37,61 +38,72 @@ export default function SessionPage() {
 
   useEffect(() => {
     async function init() {
+      // 세션 체크는 layout이 처리 — 여기서는 profile/questions만 확인
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('id')
         .eq('auth_user_id', session.user.id)
         .single()
 
-      if (!profile) { router.push('/home'); return }
+      if (profileError || !profile) {
+        setInitError('프로필을 찾을 수 없습니다.')
+        setLoading(false)
+        return
+      }
       setProfileId(profile.id)
 
-      const { data: userQs } = await supabase
+      // 사용자 선택 문항 조회
+      const { data: userQs, error: uqError } = await supabase
         .from('user_questions')
         .select('question_id, order_num')
         .eq('user_id', profile.id)
         .order('order_num')
 
-      let questionIds: number[]
-      if (userQs && userQs.length === 29) {
-        questionIds = userQs.map((uq) => uq.question_id)
-      } else {
-        const { data: allQs } = await supabase
-          .from('questions')
-          .select('id')
-          .eq('is_common', false)
-          .limit(29)
-        questionIds = (allQs ?? []).map((q) => q.id)
+      if (uqError || !userQs || userQs.length < 29) {
+        // 문항 미설정 → 선택 페이지로
+        router.push('/select-questions')
+        return
       }
 
-      const { data: commonQ } = await supabase
-        .from('questions')
-        .select('*')
-        .eq('is_common', true)
-        .single()
+      // 선택 문항 + 공통 문항(30번) 조회
+      const questionIds = userQs.map((uq) => uq.question_id)
 
-      const { data: selectedQs } = await supabase
-        .from('questions')
-        .select('*')
-        .in('id', questionIds)
+      const [{ data: selectedQs }, { data: commonQ }] = await Promise.all([
+        supabase.from('questions').select('*').in('id', questionIds),
+        supabase.from('questions').select('*').eq('is_common', true).single(),
+      ])
 
+      if (!selectedQs || selectedQs.length === 0) {
+        setInitError('문항 데이터를 불러올 수 없습니다.')
+        setLoading(false)
+        return
+      }
+
+      // 선택 순서(order_num)대로 정렬 후 공통 문항 마지막에 추가
       const orderedQs = questionIds
-        .map((id) => (selectedQs ?? []).find((q) => q.id === id))
+        .map((id) => selectedQs.find((q) => q.id === id))
         .filter(Boolean) as Question[]
 
       if (commonQ) orderedQs.push(commonQ)
       setQuestions(orderedQs)
 
-      const { data: newSession } = await supabase
+      // 새 녹음 세션 생성
+      const { data: newSession, error: sessionError } = await supabase
         .from('sessions')
         .insert({ user_id: profile.id, status: 'in_progress' })
         .select('id')
         .single()
 
-      if (newSession) setSessionId(newSession.id)
+      if (sessionError || !newSession) {
+        setInitError('녹음 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.')
+        setLoading(false)
+        return
+      }
+
+      setSessionId(newSession.id)
       setLoading(false)
     }
     init()
@@ -101,36 +113,12 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.is_common ?? false
   const total = questions.length
 
+  // TTS: 문항 변경 시 자동 읽기
   useEffect(() => {
     if (currentQ && ttsEnabled && !recording) {
       speak(currentQ.content)
     }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak])
-
-  useEffect(() => {
-    if (recording && isFreeTalk) {
-      setElapsed(0)
-      timerRef.current = setInterval(() => {
-        setElapsed((prev) => {
-          if (prev >= FREE_TALK_LIMIT - 1) {
-            handleStop()
-            return FREE_TALK_LIMIT
-          }
-          return prev + 1
-        })
-      }, 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording, isFreeTalk])
-
-  const handleStart = async () => {
-    stopTTS()
-    await startRec()
-    if (sttEnabled) startSTT()
-  }
 
   const handleStop = useCallback(async () => {
     if (!recording || !sessionId || !currentQ) return
@@ -175,6 +163,36 @@ export default function SessionPage() {
     }
   }, [recording, sessionId, currentQ, currentIdx, isFreeTalk, profileId, stopRec, sttEnabled, stopSTT, transcript, total])
 
+  // handleStop을 ref에 보관해 타이머 interval stale closure 방지
+  const handleStopRef = useRef(handleStop)
+  useEffect(() => { handleStopRef.current = handleStop }, [handleStop])
+
+  // 30번 자유 이야기 3분 타이머
+  useEffect(() => {
+    if (recording && isFreeTalk) {
+      setElapsed(0)
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => {
+          if (prev >= FREE_TALK_LIMIT - 1) {
+            clearInterval(timerRef.current!)
+            handleStopRef.current()
+            return FREE_TALK_LIMIT
+          }
+          return prev + 1
+        })
+      }, 1000)
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [recording, isFreeTalk])
+
+  const handleStart = async () => {
+    stopTTS()
+    await startRec()
+    if (sttEnabled) startSTT()
+  }
+
   const handleSkip = () => {
     stopTTS()
     if (currentIdx + 1 >= total) {
@@ -188,6 +206,20 @@ export default function SessionPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted">준비 중...</p>
+      </div>
+    )
+  }
+
+  if (initError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-red-500 text-sm">{initError}</p>
+        <button
+          onClick={() => router.push('/home')}
+          className="px-5 py-2.5 rounded-xl bg-amber text-white text-sm font-medium"
+        >
+          홈으로 돌아가기
+        </button>
       </div>
     )
   }
@@ -212,9 +244,7 @@ export default function SessionPage() {
     <div className="px-4 pt-10 pb-4 space-y-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-deep">녹음 세션</h1>
-        <div className="flex items-center gap-2">
-          <Toggle checked={ttsEnabled} onChange={setTtsEnabled} label="TTS" />
-        </div>
+        <Toggle checked={ttsEnabled} onChange={setTtsEnabled} label="TTS" />
       </div>
 
       {currentQ && (
@@ -247,9 +277,7 @@ export default function SessionPage() {
         timeLimit={isFreeTalk ? FREE_TALK_LIMIT : undefined}
       />
 
-      {saving && (
-        <p className="text-center text-xs text-muted">저장 중...</p>
-      )}
+      {saving && <p className="text-center text-xs text-muted">저장 중...</p>}
     </div>
   )
 }

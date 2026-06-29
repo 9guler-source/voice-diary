@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createSupabaseServer } from '@/lib/supabase-server'
 import Link from 'next/link'
 import { Mic, BookOpen } from 'lucide-react'
@@ -13,15 +14,25 @@ async function getData() {
     .eq('auth_user_id', session.user.id)
     .single()
 
-  if (!profile) return { profile: null, sessionCount: 0 }
+  if (!profile) return null
 
-  const { count } = await supabase
+  // 문항 29개 선택 여부 확인 — 미완료 시 선택 페이지로
+  const { count: questionCount } = await supabase
+    .from('user_questions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', profile.id)
+
+  if ((questionCount ?? 0) < 29) {
+    redirect('/select-questions')
+  }
+
+  const { count: sessionCount } = await supabase
     .from('sessions')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', profile.id)
     .eq('status', 'completed')
 
-  return { profile, sessionCount: count ?? 0 }
+  return { profile, sessionCount: sessionCount ?? 0 }
 }
 
 export default async function HomePage() {
