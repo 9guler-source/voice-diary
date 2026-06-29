@@ -26,12 +26,15 @@ export default function SessionPage() {
   const [ttsEnabled, setTtsEnabled] = useState(true)
   const [ttsSubtitleEnabled, setTtsSubtitleEnabled] = useState(true)
   const [sttEnabled, setSttEnabled] = useState(false)
+  const [starterTTSEnabled, setStarterTTSEnabled] = useState(true)
+  const [starterPlaying, setStarterPlaying] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState('')
   const [saving, setSaving] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const starterAbortRef = useRef(false)
 
   const { recording, decibel, start: startRec, stop: stopRec } = useRecording()
   const { speak, stop: stopTTS } = useTTS()
@@ -41,11 +44,13 @@ export default function SessionPage() {
   useEffect(() => {
     setSttEnabled(localStorage.getItem('stt-enabled') === 'true')
     setTtsSubtitleEnabled(localStorage.getItem('tts-subtitle-enabled') !== 'false')
+    setStarterTTSEnabled(localStorage.getItem('starter-tts-enabled') !== 'false')
   }, [])
 
   // localStorage 저장
   useEffect(() => { localStorage.setItem('stt-enabled', String(sttEnabled)) }, [sttEnabled])
   useEffect(() => { localStorage.setItem('tts-subtitle-enabled', String(ttsSubtitleEnabled)) }, [ttsSubtitleEnabled])
+  useEffect(() => { localStorage.setItem('starter-tts-enabled', String(starterTTSEnabled)) }, [starterTTSEnabled])
 
   useEffect(() => {
     async function init() {
@@ -205,11 +210,30 @@ export default function SessionPage() {
 
   const handleStart = async () => {
     stopTTS()
+    // 시작 문구 TTS가 켜져 있고 starter가 있으면 먼저 읽고 녹음 시작
+    if (starterTTSEnabled && currentQ?.starter) {
+      starterAbortRef.current = false
+      setStarterPlaying(true)
+      await new Promise<void>((resolve) => {
+        const synth = window.speechSynthesis
+        if (!synth) { resolve(); return }
+        const utt = new SpeechSynthesisUtterance(currentQ!.starter!)
+        utt.lang = 'ko-KR'
+        utt.rate = 0.9
+        utt.volume = 0.85
+        utt.onend = () => resolve()
+        utt.onerror = () => resolve()   // 취소/에러 시에도 resolve해서 다음 단계로
+        synth.speak(utt)
+      })
+      setStarterPlaying(false)
+      if (starterAbortRef.current) return  // handleSkip이 호출된 경우 중단
+    }
     await startRec()
     if (sttEnabled) startSTT()
   }
 
   const handleSkip = () => {
+    starterAbortRef.current = true   // 진행 중인 starter TTS 중단 신호
     stopTTS()
     stopSTT()
     if (currentIdx + 1 >= total) {
@@ -299,12 +323,30 @@ export default function SessionPage() {
         sttError={sttError}
       />
 
+      {/* 답변 시작 유도 문구 */}
+      {!recording && currentQ?.starter && (
+        <div className="rounded-xl bg-amber/10 border border-amber/25 px-4 py-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-amber">💡 이렇게 시작해 보세요</p>
+            <Toggle
+              checked={starterTTSEnabled}
+              onChange={setStarterTTSEnabled}
+              label="읽어주기"
+            />
+          </div>
+          <p className="text-sm text-deep leading-relaxed">{currentQ.starter}</p>
+          {starterPlaying && (
+            <p className="text-xs text-amber animate-pulse">🎙 시작 문구 읽는 중...</p>
+          )}
+        </div>
+      )}
+
       <RecordingControls
         recording={recording}
         onStart={handleStart}
         onStop={handleStop}
         onSkip={handleSkip}
-        disabled={saving}
+        disabled={saving || starterPlaying}
         elapsed={isFreeTalk ? elapsed : undefined}
         timeLimit={isFreeTalk ? FREE_TALK_LIMIT : undefined}
       />
