@@ -2,73 +2,111 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createBrowserClient } from '@supabase/ssr'
 import type { Database } from '@/lib/database.types'
 
 type Question = Database['voice_diary']['Tables']['questions']['Row']
 
 const REQUIRED = 29
 
+// useEffect 내부에서 생성 → SSR 타이밍 문제 없이 브라우저 환경 보장
+function makeClient() {
+  return createBrowserClient<Database, 'voice_diary'>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { db: { schema: 'voice_diary' } }
+  )
+}
+
 export default function SelectQuestionsPage() {
   const router = useRouter()
   const profileIdRef = useRef<string | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
-  const [selected, setSelected] = useState<number[]>([])   // 선택 순서 보존
+  const [selected, setSelected] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
+  const [initError, setInitError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     async function load() {
-      const { data: { session } } = await supabase.auth.getSession()
+      const supabase = makeClient()
+
+      // ── 1. 세션 확인 ──
+      const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+      console.log('[SelectQ] session:', session?.user?.id ?? null, sessionErr?.message)
       if (!session) { router.push('/login'); return }
 
-      const { data: profile } = await supabase
+      // ── 2. 프로필 조회 ──
+      const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('id')
         .eq('auth_user_id', session.user.id)
         .single()
-
-      if (!profile) { router.push('/login'); return }
+      console.log('[SelectQ] profile:', profile?.id ?? null, profileErr?.message)
+      if (!profile) {
+        setInitError(`프로필을 찾을 수 없습니다. (${profileErr?.message ?? 'unknown'})`)
+        setLoading(false)
+        return
+      }
       profileIdRef.current = profile.id
 
-      // 이미 선택 완료된 경우 홈으로
-      const { count } = await supabase
+      // ── 3. 이미 29개 선택 완료 → 홈으로 ──
+      const { count, error: countErr } = await supabase
         .from('user_questions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', profile.id)
-
+      console.log('[SelectQ] user_questions count:', count, countErr?.message)
       if ((count ?? 0) >= REQUIRED) { router.push('/home'); return }
 
-      // 기존 선택이 있으면 불러오기 (이어서 선택 가능)
-      const { data: existing } = await supabase
+      // ── 4. 기존 선택 복원 ──
+      const { data: existing, error: existingErr } = await supabase
         .from('user_questions')
         .select('question_id, order_num')
         .eq('user_id', profile.id)
         .order('order_num')
-
+      console.log('[SelectQ] existing selections:', existing?.length ?? 0, existingErr?.message)
       if (existing && existing.length > 0) {
         setSelected(existing.map((e) => e.question_id))
       }
 
-      // 공통 문항(30번) 제외한 선택 가능 문항 전부 로드
-      const { data: qs } = await supabase
+      // ── 5. 문항 목록 조회 ──
+      const { data: qs, error: qsErr } = await supabase
         .from('questions')
         .select('*')
         .eq('is_common', false)
         .order('category')
         .order('order_hint')
 
-      setQuestions(qs ?? [])
+      console.log('[SelectQ] questions:', qs?.length ?? 0, 'error:', qsErr?.message ?? null)
+      if (qs && qs.length > 0) console.log('[SelectQ] sample:', qs[0])
+
+      if (qsErr) {
+        setInitError(`문항 조회 실패: ${qsErr.message}`)
+        setLoading(false)
+        return
+      }
+      if (!qs || qs.length === 0) {
+        setInitError('표시할 문항이 없습니다. Supabase SQL Editor에서 마이그레이션(001번)을 실행했는지 확인해 주세요.')
+        setLoading(false)
+        return
+      }
+
+      setQuestions(qs)
       setLoading(false)
     }
-    load()
+
+    load().catch((err) => {
+      console.error('[SelectQ] 예상치 못한 에러:', err)
+      setInitError(`오류가 발생했습니다: ${String(err)}`)
+      setLoading(false)
+    })
   }, [router])
 
   const toggle = (id: number) => {
     setSelected((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id)
-      if (prev.length >= REQUIRED) return prev   // 29개 초과 선택 불가
+      if (prev.length >= REQUIRED) return prev
       return [...prev, id]
     })
   }
@@ -78,7 +116,7 @@ export default function SelectQuestionsPage() {
     setSaving(true)
     setSaveError('')
 
-    // 기존 선택 전체 삭제 후 재삽입
+    const supabase = makeClient()
     await supabase.from('user_questions').delete().eq('user_id', profileIdRef.current)
 
     const rows = selected.map((questionId, i) => ({
@@ -88,9 +126,9 @@ export default function SelectQuestionsPage() {
     }))
 
     const { error } = await supabase.from('user_questions').insert(rows)
-
     if (error) {
-      setSaveError('저장에 실패했습니다. 다시 시도해 주세요.')
+      console.error('[SelectQ] save error:', error.message)
+      setSaveError(`저장 실패: ${error.message}`)
       setSaving(false)
       return
     }
@@ -98,17 +136,32 @@ export default function SelectQuestionsPage() {
     router.push('/home')
   }
 
-  // 카테고리별 그룹
   const grouped = questions.reduce<Record<string, Question[]>>((acc, q) => {
     if (!acc[q.category]) acc[q.category] = []
     acc[q.category].push(q)
     return acc
   }, {})
 
+  // ── 로딩 ──
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted">문항을 불러오는 중...</p>
+        <p className="text-muted text-sm">문항을 불러오는 중...</p>
+      </div>
+    )
+  }
+
+  // ── 에러 ──
+  if (initError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-red-500 text-sm whitespace-pre-wrap">{initError}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2.5 rounded-xl bg-amber text-white text-sm font-medium"
+        >
+          다시 시도
+        </button>
       </div>
     )
   }
