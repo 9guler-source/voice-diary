@@ -16,16 +16,6 @@ async function getData() {
 
   if (!profile) return null
 
-  // 문항 29개 선택 여부 확인 — 미완료 시 선택 페이지로
-  const { count: questionCount } = await supabase
-    .from('user_questions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', profile.id)
-
-  if ((questionCount ?? 0) < 29) {
-    redirect('/select-questions')
-  }
-
   const { count: sessionCount } = await supabase
     .from('sessions')
     .select('id', { count: 'exact', head: true })
@@ -37,31 +27,32 @@ async function getData() {
 
 export default async function HomePage() {
   const data = await getData()
+  if (!data) redirect('/login')
 
   return (
     <div className="px-4 pt-12 pb-4 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-deep">
-          {data?.profile?.name ? `${data.profile.name}님, 안녕하세요` : '안녕하세요'}
+          {data.profile.name ? `${data.profile.name}님, 안녕하세요` : '안녕하세요'}
         </h1>
         <p className="text-muted text-sm mt-1">오늘도 소중한 이야기를 남겨보세요</p>
       </div>
 
       <div className="bg-amber/10 border border-amber/30 rounded-2xl p-5">
         <p className="text-amber-dark text-sm font-medium mb-1">녹음 현황</p>
-        <p className="text-3xl font-bold text-deep">{data?.sessionCount ?? 0}회</p>
+        <p className="text-3xl font-bold text-deep">{data.sessionCount}회</p>
         <p className="text-muted text-xs mt-1">완료된 녹음 세션</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Link
-          href="/session"
+          href="/select-questions?mode=session"
           className="bg-amber text-white rounded-2xl p-5 flex flex-col gap-3 hover:bg-amber-dark transition-colors"
         >
           <Mic size={28} />
           <div>
             <p className="font-semibold">녹음 시작</p>
-            <p className="text-xs opacity-80 mt-0.5">30개 문항 녹음</p>
+            <p className="text-xs opacity-80 mt-0.5">문항 선택 후 녹음</p>
           </div>
         </Link>
         <Link

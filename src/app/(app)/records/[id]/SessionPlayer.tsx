@@ -20,9 +20,9 @@ export type Recording = {
 type PlayMode = 'none' | 'answers' | 'together'
 type TogStep = 'q' | 'a'
 
-type Props = { recordings: Recording[]; sessionDate: string }
+type Props = { recordings: Recording[]; sessionDate: string; questionCount?: number }
 
-export default function SessionPlayer({ recordings, sessionDate }: Props) {
+export default function SessionPlayer({ recordings, sessionDate, questionCount }: Props) {
   // ── 공통 상태 ──────────────────────────────────────────────────
   const [mode, setMode] = useState<PlayMode>('none')
   const [playingId, setPlayingId] = useState<string | null>(null)
@@ -219,7 +219,10 @@ export default function SessionPlayer({ recordings, sessionDate }: Props) {
         <ChevronLeft size={16} /> 목록으로
       </Link>
       <h1 className="text-xl font-bold text-deep mb-1">녹음 세션</h1>
-      <p className="text-xs text-muted mb-5">{sessionDate}</p>
+      <p className="text-xs text-muted mb-1">{sessionDate}</p>
+      {questionCount !== undefined && (
+        <p className="text-xs text-muted mb-5">{questionCount}개 문항 · {recordings.length}개 녹음</p>
+      )}
 
       {/* ── 재생 컨트롤 패널 ── */}
       <div className="bg-warm-white border border-muted/20 rounded-2xl px-4 py-3 mb-5 space-y-3">

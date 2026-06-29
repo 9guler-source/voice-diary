@@ -10,7 +10,7 @@ async function getSessionData(id: string) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, recorded_at, status')
+    .select('id, recorded_at, status, selected_questions')
     .eq('id', id)
     .single()
 
@@ -46,10 +46,13 @@ export default async function SessionDetailPage({ params }: Props) {
     )
   }
 
+  const questionCount = data.session.selected_questions?.length ?? data.recordings.length
+
   return (
     <SessionPlayer
       recordings={data.recordings}
       sessionDate={formatDate(data.session.recorded_at)}
+      questionCount={questionCount}
     />
   )
 }

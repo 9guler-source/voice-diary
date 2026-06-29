@@ -101,6 +101,7 @@ export type Database = {
           avg_decibel: number | null
           max_decibel: number | null
           status: string
+          selected_questions: Array<{ question_id: number; order: number }> | null
         }
         Insert: {
           id?: string
@@ -110,12 +111,14 @@ export type Database = {
           avg_decibel?: number | null
           max_decibel?: number | null
           status?: string
+          selected_questions?: Array<{ question_id: number; order: number }> | null
         }
         Update: {
           total_duration_sec?: number | null
           avg_decibel?: number | null
           max_decibel?: number | null
           status?: string
+          selected_questions?: Array<{ question_id: number; order: number }> | null
         }
         Relationships: []
       }

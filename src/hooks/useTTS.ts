@@ -2,106 +2,67 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
 export function useTTS() {
-  const synthRef = useRef<SpeechSynthesis | null>(null)
-  const callIdRef = useRef(0)
   const isSpeakingRef = useRef(false)
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      synthRef.current = window.speechSynthesis
-    }
+    if (typeof window === 'undefined') return
 
     // Chrome 15초 멈춤 버그 우회: 5초마다 resume() 호출
     const interval = setInterval(() => {
-      if (isSpeakingRef.current && synthRef.current) {
-        synthRef.current.resume()
+      if (isSpeakingRef.current) {
+        window.speechSynthesis.resume()
       }
     }, 5000)
 
     return () => {
       clearInterval(interval)
-      callIdRef.current++
-      const synth = synthRef.current
-      if (synth) {
-        synth.pause()
-        synth.cancel()
+      if (pendingTimerRef.current !== null) {
+        clearTimeout(pendingTimerRef.current)
+        pendingTimerRef.current = null
       }
+      window.speechSynthesis?.cancel()
       isSpeakingRef.current = false
     }
   }, [])
 
   const stop = useCallback(() => {
-    callIdRef.current++
-    const synth = synthRef.current
-    if (!synth) return
-    synth.pause()
-    synth.cancel()
+    if (typeof window === 'undefined') return
+    if (pendingTimerRef.current !== null) {
+      clearTimeout(pendingTimerRef.current)
+      pendingTimerRef.current = null
+    }
     isSpeakingRef.current = false
+    window.speechSynthesis.cancel()
   }, [])
 
-  const speak = useCallback(async (text: string, volume: number = 80) => {
-    const synth = synthRef.current
-    if (!synth) return
+  const speak = useCallback((text: string, volume: number = 80): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      if (typeof window === 'undefined') { resolve(); return }
 
-    // 이 speak() 호출의 고유 ID — 더 늦은 speak()/stop() 호출이 오면 무효화됨
-    const myCallId = ++callIdRef.current
+      // 대기 중인 타이머 취소 + 현재 재생 중단
+      if (pendingTimerRef.current !== null) {
+        clearTimeout(pendingTimerRef.current)
+        pendingTimerRef.current = null
+      }
+      window.speechSynthesis.cancel()
+      isSpeakingRef.current = false
 
-    // 1단계: 즉시 중단
-    synth.pause()
-    synth.cancel()
-    isSpeakingRef.current = false
+      const utt = new SpeechSynthesisUtterance(text)
+      utt.lang = 'ko-KR'
+      utt.rate = 0.85
+      utt.volume = volume / 100
+      utt.onend = () => { isSpeakingRef.current = false; resolve() }
+      utt.onerror = () => { isSpeakingRef.current = false; resolve() }
 
-    // 2단계: 300ms 대기 (브라우저가 cancel 처리할 시간)
-    await sleep(300)
-    if (callIdRef.current !== myCallId) return
-
-    // 3단계: 한 번 더 cancel
-    synth.cancel()
-
-    // 4단계: 100ms 추가 대기
-    await sleep(100)
-    if (callIdRef.current !== myCallId) return
-
-    // 5단계: 새 utterance 생성 및 재생
-    const utt = new SpeechSynthesisUtterance(text)
-    utt.lang = 'ko-KR'
-    utt.rate = 0.85
-    utt.volume = volume / 100
-
-    utt.onstart = () => {
-      if (callIdRef.current !== myCallId) {
-        // 이미 다음 speak()/stop()이 왔으면 즉시 중단
-        synth.pause()
-        synth.cancel()
-      } else {
+      // cancel() 후 500ms 대기 보장 → 브라우저(Safari 포함)가 큐를 비울 시간 확보
+      pendingTimerRef.current = setTimeout(() => {
+        pendingTimerRef.current = null
         isSpeakingRef.current = true
-      }
-    }
-
-    // 단어/문장 경계마다 재검사 (onstart 이후 이동 대비)
-    utt.onboundary = () => {
-      if (callIdRef.current !== myCallId) {
-        synth.pause()
-        synth.cancel()
-      }
-    }
-
-    utt.onend = () => {
-      if (callIdRef.current === myCallId) {
-        isSpeakingRef.current = false
-      }
-    }
-
-    utt.onerror = () => {
-      if (callIdRef.current === myCallId) {
-        isSpeakingRef.current = false
-      }
-    }
-
-    synth.speak(utt)
+        window.speechSynthesis.speak(utt)
+      }, 500)
+    })
   }, [])
 
   return { speak, stop }

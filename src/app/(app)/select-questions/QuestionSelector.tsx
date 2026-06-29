@@ -3,33 +3,50 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveSelections } from './actions'
-import { QUESTIONS } from '@/lib/questions'
+import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
 import type { Question } from '@/lib/questions'
 
 interface Props {
   profileId: string
   initialSelected: number[]
+  mode: 'session' | 'settings'
   from?: string
 }
 
-const REQUIRED = 29
+const SETTINGS_REQUIRED = 29
+const SESSION_MAX = 30
 
-export default function QuestionSelector({ profileId, initialSelected, from }: Props) {
+export default function QuestionSelector({ profileId, initialSelected, mode, from }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<number[]>(initialSelected)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
+  const isSession = mode === 'session'
+  const maxCount = isSession ? SESSION_MAX : SETTINGS_REQUIRED
+
+  // 세션 모드에는 자유 이야기 문항도 포함
+  const allQuestions: Question[] = isSession ? [...QUESTIONS, FINAL_QUESTION] : QUESTIONS
+
   const toggle = (id: number) => {
     setSelected((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id)
-      if (prev.length >= REQUIRED) return prev
+      if (prev.length >= maxCount) return prev
       return [...prev, id]
     })
   }
 
   const handleSave = async () => {
-    if (selected.length !== REQUIRED) return
+    if (isSession) {
+      if (selected.length < 1) return
+      // sessionStorage에 저장하고 세션 페이지로 이동
+      sessionStorage.setItem('voice-diary:session-questions', JSON.stringify(selected))
+      router.push('/session')
+      return
+    }
+
+    // 설정 모드: user_questions에 저장
+    if (selected.length !== SETTINGS_REQUIRED) return
     setSaving(true)
     setSaveError('')
 
@@ -43,18 +60,27 @@ export default function QuestionSelector({ profileId, initialSelected, from }: P
     router.push(from === 'settings' ? '/settings' : '/home')
   }
 
-  const grouped = QUESTIONS.reduce<Record<string, Question[]>>((acc, q) => {
+  const grouped = allQuestions.reduce<Record<string, Question[]>>((acc, q) => {
     if (!acc[q.category]) acc[q.category] = []
     acc[q.category].push(q)
     return acc
   }, {})
 
+  const canStart = isSession ? selected.length >= 1 : selected.length === SETTINGS_REQUIRED
+  const btnLabel = isSession
+    ? (saving ? '이동 중...' : `${selected.length}개 문항으로 녹음 시작 →`)
+    : (saving ? '저장 중...' : '완료')
+
   return (
     <div className="px-4 pt-10 pb-32">
       <div className="mb-4">
-        <h1 className="text-xl font-bold text-deep">나의 문항 선택</h1>
+        <h1 className="text-xl font-bold text-deep">
+          {isSession ? '이번 녹음의 문항 선택' : '나의 문항 선택'}
+        </h1>
         <p className="text-sm text-muted mt-1">
-          녹음할 {REQUIRED}개 문항을 선택해 주세요. 30번 문항(자유 이야기)은 자동으로 포함됩니다.
+          {isSession
+            ? '이번 녹음에서 답할 문항을 선택하세요. 자유 이야기도 선택할 수 있어요.'
+            : `녹음할 ${SETTINGS_REQUIRED}개 문항을 선택해 주세요.`}
         </p>
       </div>
 
@@ -63,21 +89,30 @@ export default function QuestionSelector({ profileId, initialSelected, from }: P
         <div className="flex items-center justify-between bg-warm-white border border-muted/20 rounded-2xl px-4 py-3 shadow-sm">
           <div>
             <span className="text-sm text-mid">선택됨 </span>
-            <span className={`text-lg font-bold ${selected.length === REQUIRED ? 'text-sage' : 'text-amber'}`}>
+            <span className={`text-lg font-bold ${canStart ? 'text-sage' : 'text-amber'}`}>
               {selected.length}
             </span>
-            <span className="text-sm text-muted"> / {REQUIRED}</span>
+            {isSession ? (
+              <span className="text-sm text-muted"> / {SESSION_MAX} (최소 1개)</span>
+            ) : (
+              <span className="text-sm text-muted"> / {SETTINGS_REQUIRED}</span>
+            )}
           </div>
           <button
             onClick={handleSave}
-            disabled={selected.length !== REQUIRED || saving}
+            disabled={!canStart || saving}
             className="px-5 py-2 rounded-xl bg-amber text-white text-sm font-semibold hover:bg-amber-dark transition-colors disabled:opacity-40"
           >
-            {saving ? '저장 중...' : '완료'}
+            {btnLabel}
           </button>
         </div>
         {saveError && <p className="text-xs text-red-500 text-center mt-1">{saveError}</p>}
-        {selected.length >= REQUIRED && (
+        {isSession && selected.length > 0 && (
+          <p className="text-xs text-sage text-center mt-1">
+            {selected.length}개 선택됨 — 완료 버튼을 눌러 녹음을 시작하세요.
+          </p>
+        )}
+        {!isSession && selected.length >= SETTINGS_REQUIRED && (
           <p className="text-xs text-sage text-center mt-1">29개 선택 완료! 완료 버튼을 눌러주세요.</p>
         )}
       </div>
@@ -92,7 +127,7 @@ export default function QuestionSelector({ profileId, initialSelected, from }: P
             {qs.map((q) => {
               const isSelected = selected.includes(q.id)
               const orderNum = selected.indexOf(q.id) + 1
-              const isDisabled = !isSelected && selected.length >= REQUIRED
+              const isDisabled = !isSelected && selected.length >= maxCount
 
               return (
                 <button

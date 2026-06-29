@@ -4,7 +4,8 @@ import { randomUUID } from 'crypto'
 import { createSupabaseServer } from '@/lib/supabase-server'
 
 export async function createSession(
-  profileId: string
+  profileId: string,
+  selectedQuestions: Array<{ question_id: number; order: number }>
 ): Promise<{ sessionId?: string; error?: string }> {
   // UUID를 서버에서 직접 생성 → INSERT...RETURNING 없이 INSERT만 실행
   // (sessions_family_read 정책이 auth.users를 직접 조회하므로
@@ -14,7 +15,12 @@ export async function createSession(
 
   const { error } = await supabase
     .from('sessions')
-    .insert({ id: sessionId, user_id: profileId, status: 'in_progress' })
+    .insert({
+      id: sessionId,
+      user_id: profileId,
+      status: 'in_progress',
+      selected_questions: selectedQuestions,
+    })
 
   if (error) {
     console.error('[createSession] INSERT error:', error.message, error.code, error.hint)

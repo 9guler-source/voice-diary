@@ -16,8 +16,7 @@ import type { Question } from '@/lib/questions'
 import { createSession, saveRecording, completeSession } from './actions'
 
 const FREE_TALK_LIMIT = 180
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const ALL_QUESTIONS = [...QUESTIONS, FINAL_QUESTION]
 
 export default function SessionPage() {
   const router = useRouter()
@@ -66,27 +65,35 @@ export default function SessionPage() {
         .single()
 
       if (profileError || !profile) {
-        console.error('[SESSION] profile 오류:', profileError?.message)
         setInitError('프로필을 찾을 수 없습니다.')
         setLoading(false)
         return
       }
       setProfileId(profile.id)
 
-      const { data: userQs, error: uqError } = await supabase
-        .from('user_questions')
-        .select('question_id, order_num')
-        .eq('user_id', profile.id)
-        .order('order_num')
-
-      if (uqError || !userQs || userQs.length < 29) {
-        router.push('/select-questions')
+      // sessionStorage에서 선택한 문항 ID 목록 읽기
+      const stored = sessionStorage.getItem('voice-diary:session-questions')
+      if (!stored) {
+        router.push('/select-questions?mode=session')
         return
       }
 
-      const orderedQs = userQs
-        .sort((a, b) => (a.order_num ?? 0) - (b.order_num ?? 0))
-        .map((uq) => QUESTIONS.find((q) => q.id === uq.question_id))
+      let selectedIds: number[]
+      try {
+        selectedIds = JSON.parse(stored) as number[]
+      } catch {
+        router.push('/select-questions?mode=session')
+        return
+      }
+
+      if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
+        router.push('/select-questions?mode=session')
+        return
+      }
+
+      // ID 순서대로 문항 배열 구성
+      const orderedQs = selectedIds
+        .map((id) => ALL_QUESTIONS.find((q) => q.id === id))
         .filter(Boolean) as Question[]
 
       if (orderedQs.length === 0) {
@@ -95,11 +102,11 @@ export default function SessionPage() {
         return
       }
 
-      orderedQs.push(FINAL_QUESTION)
       setQuestions(orderedQs)
 
-      const sessionResult = await createSession(profile.id)
-      console.log('[SESSION] createSession result:', sessionResult)
+      // sessions 테이블에 세션 생성 (selected_questions 포함)
+      const selectedQsData = selectedIds.map((id, i) => ({ question_id: id, order: i + 1 }))
+      const sessionResult = await createSession(profile.id, selectedQsData)
 
       if (sessionResult.error || !sessionResult.sessionId) {
         setInitError(`녹음 세션을 시작할 수 없습니다: ${sessionResult.error ?? '알 수 없는 오류'}`)
@@ -117,33 +124,13 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 즉시 stop → 강제 대기 → speak
-  // speak() 내부에서 callId로 stale utterance를 차단하므로 항상 마지막 호출만 재생됨
+  // TTS: 문항 변경 시 이전 TTS 취소 → 새 문항 읽기
+  // speak() 내부에서 cancel() 후 500ms 대기 보장
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
-
-    stopTTS()  // 즉시 중단 + callId 무효화
-
-    let cancelled = false
-
-    const run = async () => {
-      // 문항 이동 후 브라우저가 완전히 정리될 시간 확보
-      await sleep(600)
-      if (cancelled) return
-
-      // 새 문항 데이터는 이미 currentQ에 반영됨
-      await sleep(200)
-      if (cancelled) return
-
-      void speak(currentQ.content)
-    }
-
-    void run()
-
-    return () => {
-      cancelled = true
-      stopTTS()
-    }
+    stopTTS()
+    void speak(currentQ.content)
+    return () => { stopTTS() }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak, stopTTS])
 
   // 문항 이동 시 STT 자막 초기화
@@ -153,12 +140,10 @@ export default function SessionPage() {
 
   const handleStop = useCallback(async () => {
     if (!recording || !sessionId || !currentQ) return
-    stopTTS()               // 녹음 완료 시 즉시 TTS 중단
+    stopTTS()
     setSaving(true)
     const result = await stopRec()
     if (sttEnabled) stopSTT()
-
-    console.log('[SESSION] blob size:', result.blob.size, 'bytes / duration:', result.durationSec, 's')
 
     const filePath = `${profileId}/${sessionId}/${currentIdx + 1}.webm`
     let audioUrl: string | null = null
@@ -172,7 +157,6 @@ export default function SessionPage() {
     } else if (uploadData) {
       const { data: urlData } = supabase.storage.from('voice-diary').getPublicUrl(filePath)
       audioUrl = urlData.publicUrl
-      console.log('[SESSION] audioUrl saved:', audioUrl)
     }
 
     const { error: saveErr } = await saveRecording({
@@ -224,7 +208,6 @@ export default function SessionPage() {
 
   const handleStart = async () => {
     stopTTS()
-    // 시작 문구 TTS가 켜져 있고 starter가 있으면 먼저 읽고 녹음 시작
     if (starterTTSEnabled && currentQ?.starter) {
       starterAbortRef.current = false
       setStarterPlaying(true)
@@ -236,18 +219,18 @@ export default function SessionPage() {
         utt.rate = 0.9
         utt.volume = 0.85
         utt.onend = () => resolve()
-        utt.onerror = () => resolve()   // 취소/에러 시에도 resolve해서 다음 단계로
+        utt.onerror = () => resolve()
         synth.speak(utt)
       })
       setStarterPlaying(false)
-      if (starterAbortRef.current) return  // handleSkip이 호출된 경우 중단
+      if (starterAbortRef.current) return
     }
     await startRec()
     if (sttEnabled) startSTT()
   }
 
   const handleSkip = () => {
-    starterAbortRef.current = true   // 진행 중인 starter TTS 중단 신호
+    starterAbortRef.current = true
     stopTTS()
     stopSTT()
     if (currentIdx + 1 >= total) {

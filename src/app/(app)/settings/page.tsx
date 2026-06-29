@@ -148,14 +148,17 @@ export default function SettingsPage() {
     <div className="px-4 pt-12 pb-4 space-y-6">
       <h1 className="text-2xl font-bold text-deep">설정</h1>
 
-      {/* ── 내 질문 목록 ── */}
+      {/* ── 즐겨찾는 문항 (설정용 고정 목록) ── */}
       <section className="bg-warm-white border border-muted/20 rounded-2xl p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-deep">내 질문 목록</h2>
+          <h2 className="font-semibold text-deep">즐겨찾는 문항</h2>
           {userQuestions.length > 0 && (
             <span className="text-xs text-muted">{userQuestions.length}개 선택됨</span>
           )}
         </div>
+        <p className="text-xs text-muted -mt-2">
+          녹음 시작 시 기본으로 불러올 29개 문항을 설정해 두세요.
+        </p>
 
         {userQuestions.length === 0 ? (
           <p className="text-sm text-muted">선택된 문항이 없습니다.</p>
@@ -168,7 +171,7 @@ export default function SettingsPage() {
           className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-amber/50 text-amber-dark text-sm font-medium hover:bg-amber/10 transition-colors"
         >
           <PenLine size={15} />
-          29개 문항 다시 선택하기
+          즐겨찾는 문항 29개 선택하기
         </Link>
       </section>
 
