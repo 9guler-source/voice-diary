@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, StopCircle } from 'lucide-react'
+import { formatLocalDate } from '@/lib/dateUtils'
 
 export type FreeTalkItem = {
   id: string
@@ -12,12 +13,6 @@ export type FreeTalkItem = {
 }
 
 type Props = { items: FreeTalkItem[] }
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
-}
 
 export default function FreeTalkPanel({ items }: Props) {
   const [playingId, setPlayingId] = useState<string | null>(null)
@@ -180,7 +175,7 @@ export default function FreeTalkPanel({ items }: Props) {
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-mid">{formatDate(item.recorded_at)}</span>
+                <span className="text-xs font-medium text-mid">{formatLocalDate(item.recorded_at)}</span>
                 {isPlaying && (
                   <span className="text-xs bg-amber text-white px-2 py-0.5 rounded-full">
                     {isPaused ? '⏸' : '▶ 재생 중'}

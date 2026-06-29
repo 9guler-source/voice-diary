@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, Mic, Pause, Play, StopCircle, Volume2 } from 'lucide-react'
 import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
+import { formatLocalDateTime } from '@/lib/dateUtils'
 
 const ALL_Q = new Map([...QUESTIONS, FINAL_QUESTION].map((q) => [q.id, q]))
 
@@ -20,9 +21,9 @@ export type Recording = {
 type PlayMode = 'none' | 'answers' | 'together'
 type TogStep = 'q' | 'a'
 
-type Props = { recordings: Recording[]; sessionDate: string; questionCount?: number }
+type Props = { recordings: Recording[]; sessionDateUtc: string; questionCount?: number }
 
-export default function SessionPlayer({ recordings, sessionDate, questionCount }: Props) {
+export default function SessionPlayer({ recordings, sessionDateUtc, questionCount }: Props) {
   // ── 공통 상태 ──────────────────────────────────────────────────
   const [mode, setMode] = useState<PlayMode>('none')
   const [playingId, setPlayingId] = useState<string | null>(null)
@@ -219,7 +220,7 @@ export default function SessionPlayer({ recordings, sessionDate, questionCount }
         <ChevronLeft size={16} /> 목록으로
       </Link>
       <h1 className="text-xl font-bold text-deep mb-1">녹음 세션</h1>
-      <p className="text-xs text-muted mb-1">{sessionDate}</p>
+      <p className="text-xs text-muted mb-1">{formatLocalDateTime(sessionDateUtc)}</p>
       {questionCount !== undefined && (
         <p className="text-xs text-muted mb-5">{questionCount}개 문항 · {recordings.length}개 녹음</p>
       )}

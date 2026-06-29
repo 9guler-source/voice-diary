@@ -28,12 +28,6 @@ async function getSessionData(id: string) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
-
 export default async function SessionDetailPage({ params }: Props) {
   const data = await getSessionData(params.id)
 
@@ -51,7 +45,7 @@ export default async function SessionDetailPage({ params }: Props) {
   return (
     <SessionPlayer
       recordings={data.recordings}
-      sessionDate={formatDate(data.session.recorded_at)}
+      sessionDateUtc={data.session.recorded_at}
       questionCount={questionCount}
     />
   )

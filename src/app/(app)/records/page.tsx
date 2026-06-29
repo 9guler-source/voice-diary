@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Mic, ChevronRight } from 'lucide-react'
 import FreeTalkPanel from './FreeTalkPanel'
 import type { FreeTalkItem } from './FreeTalkPanel'
+import { LocalDate } from '@/components/ui/LocalDate'
 
 async function getProfileId(supabase: Awaited<ReturnType<typeof createSupabaseServer>>) {
   const { data: { session } } = await supabase.auth.getSession()
@@ -68,12 +69,6 @@ async function getFreeTalks(): Promise<FreeTalkItem[]> {
     .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
-}
-
 function formatDuration(sec: number | null) {
   if (!sec) return '-'
   const m = Math.floor(sec / 60)
@@ -114,7 +109,7 @@ export default async function RecordsPage() {
                 className="flex items-center justify-between bg-warm-white border border-muted/20 rounded-2xl px-5 py-4 hover:bg-muted/10 transition-colors"
               >
                 <div>
-                  <p className="font-medium text-deep">{formatDate(s.recorded_at)}</p>
+                  <LocalDate utc={s.recorded_at} className="font-medium text-deep" />
                   <p className="text-xs text-muted mt-1">
                     {s.status === 'completed' ? '완료' : '진행 중'} · {formatDuration(s.total_duration_sec)}
                   </p>
