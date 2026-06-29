@@ -15,6 +15,9 @@ interface Question {
 const REQUIRED = 29
 
 async function fetchQuestions(supabaseUrl: string, anonKey: string): Promise<Question[]> {
+  console.log('[ENV] URL:', supabaseUrl?.slice(0, 40))
+  console.log('[ENV] KEY:', anonKey?.slice(0, 20))
+
   const base = `${supabaseUrl}/rest/v1/questions`
 
   // ── Method 1: Accept-Profile + Content-Profile ──
@@ -129,10 +132,14 @@ export default function SelectQuestionsPage() {
       if (existing?.length) setSelected(existing.map((e) => e.question_id))
 
       // ── 문항 조회 (세 가지 방법 순차 시도) ──
-      const qs = await fetchQuestions(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
+      // 빌드 시 env가 undefined면 하드코딩 값으로 폴백
+      const SUPABASE_URL =
+        process.env.NEXT_PUBLIC_SUPABASE_URL ??
+        'https://sfeyfxojkyjdbwpkvcdm.supabase.co'
+      const SUPABASE_KEY =
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmZXlmeG9qa3lqZGJ3cGt2Y2RtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMDYwMDEsImV4cCI6MjA5Njc4MjAwMX0.WQe4cQlEOnmi3euW9QSc_iVjk63wTNnr8-6JioEOvts'
+      const qs = await fetchQuestions(SUPABASE_URL, SUPABASE_KEY)
       setQuestions(qs)
       setLoading(false)
     }
