@@ -7,7 +7,7 @@ export default function SignupPage() {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="text-5xl mb-3">🎙️</div>
-            <p className="text-xs font-medium text-amber-dark mb-1">기억을 붙잡아</p>
+            <p className="text-xs font-medium text-amber-dark mb-1">기억을 꼭 붙잡아!! 🤬💢</p>
             <h1 className="text-2xl font-bold text-deep">회원가입</h1>
             <p className="text-muted text-sm mt-1">새 계정을 만들어 시작하세요</p>
           </div>

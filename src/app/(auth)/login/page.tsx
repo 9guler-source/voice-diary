@@ -13,7 +13,7 @@ export default function LoginPage({ searchParams }: Props) {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="text-5xl mb-4">🎙️</div>
-            <h1 className="text-3xl font-bold text-deep tracking-tight">기억을 붙잡아</h1>
+            <h1 className="text-3xl font-bold text-deep tracking-tight">기억을 꼭 붙잡아!! 🤬💢</h1>
             <p className="text-amber-dark font-medium italic mt-1.5">찬란했던 나의 이야기</p>
             <div className="mt-3 space-y-1 text-xs text-muted/80 leading-relaxed">
               <p>기억이 흐려지기 전에, 지금 목소리로 남겨두세요.</p>
