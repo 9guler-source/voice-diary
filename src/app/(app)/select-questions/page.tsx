@@ -2,21 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
-import type { Database } from '@/lib/database.types'
+import { supabase } from '@/lib/supabase'
 
-type Question = Database['voice_diary']['Tables']['questions']['Row']
+interface Question {
+  id: number
+  category: string
+  content: string
+  is_common: boolean
+  order_hint: number | null
+}
 
 const REQUIRED = 29
-
-// useEffect 내부에서 생성 → SSR 타이밍 문제 없이 브라우저 환경 보장
-function makeClient() {
-  return createBrowserClient<Database, 'voice_diary'>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { db: { schema: 'voice_diary' } }
-  )
-}
 
 export default function SelectQuestionsPage() {
   const router = useRouter()
@@ -30,68 +26,65 @@ export default function SelectQuestionsPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = makeClient()
-
-      // ── 1. 세션 확인 ──
-      const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
-      console.log('[SelectQ] session:', session?.user?.id ?? null, sessionErr?.message)
+      // ── 세션 확인 ──
+      const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      // ── 2. 프로필 조회 ──
+      // ── 프로필 조회 ──
       const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('id')
         .eq('auth_user_id', session.user.id)
         .single()
-      console.log('[SelectQ] profile:', profile?.id ?? null, profileErr?.message)
+
       if (!profile) {
-        setInitError(`프로필을 찾을 수 없습니다. (${profileErr?.message ?? 'unknown'})`)
+        setInitError(`프로필 없음: ${profileErr?.message ?? 'unknown'}`)
         setLoading(false)
         return
       }
       profileIdRef.current = profile.id
 
-      // ── 3. 이미 29개 선택 완료 → 홈으로 ──
-      const { count, error: countErr } = await supabase
+      // ── 이미 29개 선택 완료 → 홈으로 ──
+      const { count } = await supabase
         .from('user_questions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', profile.id)
-      console.log('[SelectQ] user_questions count:', count, countErr?.message)
       if ((count ?? 0) >= REQUIRED) { router.push('/home'); return }
 
-      // ── 4. 기존 선택 복원 ──
-      const { data: existing, error: existingErr } = await supabase
+      // ── 기존 선택 복원 ──
+      const { data: existing } = await supabase
         .from('user_questions')
         .select('question_id, order_num')
         .eq('user_id', profile.id)
         .order('order_num')
-      console.log('[SelectQ] existing selections:', existing?.length ?? 0, existingErr?.message)
-      if (existing && existing.length > 0) {
-        setSelected(existing.map((e) => e.question_id))
-      }
+      if (existing?.length) setSelected(existing.map((e) => e.question_id))
 
-      // ── 5. 문항 목록 조회 (싱글턴 캐시 없이 직접 createClient) ──
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      const { createClient } = await import('@supabase/supabase-js')
-      const client = createClient(supabaseUrl, supabaseKey, {
-        db: { schema: 'voice_diary' }
-      })
-      const { data, error } = await client
-        .from('questions')
-        .select('*')
-        .eq('is_common', false)
-        .order('category')
+      // ── 문항 조회 (fetch + Accept-Profile 로 voice_diary 스키마 직접 지정) ──
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/questions?is_common=eq.false&order=category`,
+        {
+          headers: {
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+            'Accept-Profile': 'voice_diary',
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      const data = await res.json()
+      console.log('[SelectQ] fetch result:', data?.length, res.status)
 
-      console.log('[SelectQ] questions:', data?.length, error)
-
-      if (error) {
-        setInitError(`문항 조회 실패: ${error.message}`)
+      if (!res.ok) {
+        setInitError(
+          `문항 조회 실패 (HTTP ${res.status})\n${JSON.stringify(data, null, 2)}`
+        )
         setLoading(false)
         return
       }
-      if (!data || data.length === 0) {
-        setInitError('표시할 문항이 없습니다. Supabase SQL Editor에서 마이그레이션(001번)을 실행했는지 확인해 주세요.')
+      if (!Array.isArray(data) || data.length === 0) {
+        setInitError(
+          `문항 없음 (status ${res.status})\n응답: ${JSON.stringify(data)}\n\nSupabase 대시보드 → Settings → API → Exposed Schemas에 voice_diary가 있는지 확인하세요.`
+        )
         setLoading(false)
         return
       }
@@ -100,9 +93,9 @@ export default function SelectQuestionsPage() {
       setLoading(false)
     }
 
-    load().catch((err) => {
-      console.error('[SelectQ] 예상치 못한 에러:', err)
-      setInitError(`오류가 발생했습니다: ${String(err)}`)
+    load().catch((err: unknown) => {
+      console.error('[SelectQ] unexpected:', err)
+      setInitError(String(err))
       setLoading(false)
     })
   }, [router])
@@ -120,9 +113,13 @@ export default function SelectQuestionsPage() {
     setSaving(true)
     setSaveError('')
 
-    const supabase = makeClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { setSaveError('세션이 만료됐습니다. 다시 로그인해 주세요.'); setSaving(false); return }
+
+    // 기존 선택 삭제
     await supabase.from('user_questions').delete().eq('user_id', profileIdRef.current)
 
+    // 새 선택 저장
     const rows = selected.map((questionId, i) => ({
       user_id: profileIdRef.current!,
       question_id: questionId,
@@ -131,7 +128,6 @@ export default function SelectQuestionsPage() {
 
     const { error } = await supabase.from('user_questions').insert(rows)
     if (error) {
-      console.error('[SelectQ] save error:', error.message)
       setSaveError(`저장 실패: ${error.message}`)
       setSaving(false)
       return
@@ -158,8 +154,11 @@ export default function SelectQuestionsPage() {
   // ── 에러 ──
   if (initError) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-red-500 text-sm whitespace-pre-wrap">{initError}</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 py-10">
+        <p className="text-red-500 text-sm font-medium text-center">문항을 불러오지 못했습니다</p>
+        <pre className="w-full bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-auto whitespace-pre-wrap break-all">
+          {initError}
+        </pre>
         <button
           onClick={() => window.location.reload()}
           className="px-5 py-2.5 rounded-xl bg-amber text-white text-sm font-medium"
