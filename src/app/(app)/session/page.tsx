@@ -24,6 +24,7 @@ export default function SessionPage() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [profileId, setProfileId] = useState<string | null>(null)
   const [ttsEnabled, setTtsEnabled] = useState(true)
+  const [ttsSubtitleEnabled, setTtsSubtitleEnabled] = useState(true)
   const [sttEnabled, setSttEnabled] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [done, setDone] = useState(false)
@@ -34,7 +35,17 @@ export default function SessionPage() {
 
   const { recording, decibel, start: startRec, stop: stopRec } = useRecording()
   const { speak, stop: stopTTS } = useTTS()
-  const { transcript, interim, error: sttError, start: startSTT, stop: stopSTT } = useSTT()
+  const { transcript, interim, error: sttError, start: startSTT, stop: stopSTT, reset: resetSTT } = useSTT()
+
+  // localStorage 복원 (마운트 시 한 번)
+  useEffect(() => {
+    setSttEnabled(localStorage.getItem('stt-enabled') === 'true')
+    setTtsSubtitleEnabled(localStorage.getItem('tts-subtitle-enabled') !== 'false')
+  }, [])
+
+  // localStorage 저장
+  useEffect(() => { localStorage.setItem('stt-enabled', String(sttEnabled)) }, [sttEnabled])
+  useEffect(() => { localStorage.setItem('tts-subtitle-enabled', String(ttsSubtitleEnabled)) }, [ttsSubtitleEnabled])
 
   useEffect(() => {
     async function init() {
@@ -48,38 +59,31 @@ export default function SessionPage() {
         .single()
 
       if (profileError || !profile) {
-        console.log('[SESSION] profile 오류:', profileError?.message, profileError?.code)
+        console.error('[SESSION] profile 오류:', profileError?.message)
         setInitError('프로필을 찾을 수 없습니다.')
         setLoading(false)
         return
       }
-      console.log('[SESSION] profileId:', profile.id)
       setProfileId(profile.id)
 
-      // 사용자 선택 문항 id · 순서 조회
       const { data: userQs, error: uqError } = await supabase
         .from('user_questions')
         .select('question_id, order_num')
         .eq('user_id', profile.id)
         .order('order_num')
 
-      console.log('[SESSION] userQs count:', userQs?.length, '/ error:', uqError?.message)
-
       if (uqError || !userQs || userQs.length < 29) {
         router.push('/select-questions')
         return
       }
 
-      // 하드코딩 문항에서 선택 순서대로 매칭
-      const questionIds = userQs.map((uq) => uq.question_id)
-      const orderedQs = questionIds
-        .map((id) => QUESTIONS.find((q) => q.id === id))
+      const orderedQs = userQs
+        .sort((a, b) => (a.order_num ?? 0) - (b.order_num ?? 0))
+        .map((uq) => QUESTIONS.find((q) => q.id === uq.question_id))
         .filter(Boolean) as Question[]
 
-      console.log('[SESSION] orderedQs:', orderedQs.length)
-
       if (orderedQs.length === 0) {
-        setInitError('선택된 문항을 찾을 수 없습니다.')
+        setInitError('문항 데이터를 불러올 수 없습니다.')
         setLoading(false)
         return
       }
@@ -87,7 +91,6 @@ export default function SessionPage() {
       orderedQs.push(FINAL_QUESTION)
       setQuestions(orderedQs)
 
-      // 새 녹음 세션 생성 (서버 액션)
       const sessionResult = await createSession(profile.id)
       console.log('[SESSION] createSession result:', sessionResult)
 
@@ -107,12 +110,21 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 자동 읽기
+  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 300ms 후 새 문항 읽기
   useEffect(() => {
-    if (currentQ && ttsEnabled && !recording) {
-      speak(currentQ.content)
+    if (!currentQ || !ttsEnabled || recording) return
+    window.speechSynthesis?.cancel()
+    const id = setTimeout(() => speak(currentQ.content), 300)
+    return () => {
+      clearTimeout(id)
+      window.speechSynthesis?.cancel()
     }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak])
+
+  // 문항 이동 시 STT 자막 초기화
+  useEffect(() => {
+    resetSTT()
+  }, [currentIdx, resetSTT])
 
   const handleStop = useCallback(async () => {
     if (!recording || !sessionId || !currentQ) return
@@ -122,29 +134,36 @@ export default function SessionPage() {
 
     const { data: { session } } = await supabase.auth.getSession()
     const filePath = `${profileId}/${sessionId}/${currentIdx + 1}.webm`
-    let audioUrl: string | undefined
+    let audioUrl: string | null = null
 
     if (session) {
-      const { data } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('voice-diary')
         .upload(filePath, result.blob, { contentType: 'audio/webm' })
-      if (data) {
+
+      if (uploadError) {
+        console.error('[SESSION] storage upload error:', uploadError.message)
+      } else if (uploadData) {
         const { data: urlData } = supabase.storage.from('voice-diary').getPublicUrl(filePath)
         audioUrl = urlData.publicUrl
+        console.log('[SESSION] audioUrl saved:', audioUrl)
       }
+    } else {
+      console.warn('[SESSION] auth session 없음 — storage upload 건너뜀')
     }
 
-    await saveRecording({
+    const { error: saveErr } = await saveRecording({
       sessionId,
       questionId: currentQ.id,
       questionOrder: currentIdx + 1,
-      audioUrl: audioUrl ?? null,
+      audioUrl,
       durationSec: result.durationSec,
       maxDecibel: result.maxDecibel,
       avgDecibel: result.avgDecibel,
       isFreeTalk,
       sttText: sttEnabled ? transcript : null,
     })
+    if (saveErr) console.error('[SESSION] saveRecording error:', saveErr)
 
     setSaving(false)
 
@@ -188,6 +207,7 @@ export default function SessionPage() {
 
   const handleSkip = () => {
     stopTTS()
+    stopSTT()
     if (currentIdx + 1 >= total) {
       setDone(true)
     } else {
@@ -250,8 +270,23 @@ export default function SessionPage() {
         />
       )}
 
+      {/* TTS 자막 */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-mid">TTS 자막</span>
+          <Toggle checked={ttsSubtitleEnabled} onChange={setTtsSubtitleEnabled} />
+        </div>
+        {ttsSubtitleEnabled && currentQ && (
+          <div className="bg-amber/15 border border-amber/30 rounded-xl px-4 py-3 text-sm text-deep leading-relaxed">
+            <span className="text-xs font-semibold text-amber mr-2">🔊</span>
+            {currentQ.content}
+          </div>
+        )}
+      </div>
+
       <WaveformCanvas decibel={decibel} active={recording} />
 
+      {/* STT 자막 */}
       <SubtitlePanel
         transcript={transcript}
         interim={interim}

@@ -102,5 +102,10 @@ export function useSTT() {
     setInterim('')
   }, [])
 
-  return { transcript, interim, listening, error, start, stop }
+  const reset = useCallback(() => {
+    setTranscript('')
+    setInterim('')
+  }, [])
+
+  return { transcript, interim, listening, error, start, stop, reset }
 }
