@@ -47,10 +47,12 @@ export default function SessionPage() {
         .single()
 
       if (profileError || !profile) {
+        console.log('[SESSION] profile 오류:', profileError?.message, profileError?.code)
         setInitError('프로필을 찾을 수 없습니다.')
         setLoading(false)
         return
       }
+      console.log('[SESSION] profileId:', profile.id)
       setProfileId(profile.id)
 
       // 사용자 선택 문항 id · 순서 조회
@@ -59,6 +61,8 @@ export default function SessionPage() {
         .select('question_id, order_num')
         .eq('user_id', profile.id)
         .order('order_num')
+
+      console.log('[SESSION] userQs count:', userQs?.length, '/ error:', uqError?.message)
 
       if (uqError || !userQs || userQs.length < 29) {
         router.push('/select-questions')
@@ -70,6 +74,8 @@ export default function SessionPage() {
       const orderedQs = questionIds
         .map((id) => QUESTIONS.find((q) => q.id === id))
         .filter(Boolean) as Question[]
+
+      console.log('[SESSION] orderedQs:', orderedQs.length)
 
       if (orderedQs.length === 0) {
         setInitError('선택된 문항을 찾을 수 없습니다.')
@@ -86,6 +92,8 @@ export default function SessionPage() {
         .insert({ user_id: profile.id, status: 'in_progress' })
         .select('id')
         .single()
+
+      console.log('[SESSION] newSession:', newSession?.id, '/ error:', sessionError?.message, sessionError?.code, sessionError?.details)
 
       if (sessionError || !newSession) {
         setInitError('녹음 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.')
