@@ -11,9 +11,8 @@ import RecordingControls from '@/components/session/RecordingControls'
 import SubtitlePanel from '@/components/session/SubtitlePanel'
 import WaveformCanvas from '@/components/ui/WaveformCanvas'
 import Toggle from '@/components/ui/Toggle'
-import type { Database } from '@/lib/database.types'
-
-type Question = Database['voice_diary']['Tables']['questions']['Row']
+import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
+import type { Question } from '@/lib/questions'
 
 const FREE_TALK_LIMIT = 180
 
@@ -38,7 +37,6 @@ export default function SessionPage() {
 
   useEffect(() => {
     async function init() {
-      // 세션 체크는 layout이 처리 — 여기서는 profile/questions만 확인
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
@@ -55,7 +53,7 @@ export default function SessionPage() {
       }
       setProfileId(profile.id)
 
-      // 사용자 선택 문항 조회
+      // 사용자 선택 문항 id · 순서 조회
       const { data: userQs, error: uqError } = await supabase
         .from('user_questions')
         .select('question_id, order_num')
@@ -63,31 +61,23 @@ export default function SessionPage() {
         .order('order_num')
 
       if (uqError || !userQs || userQs.length < 29) {
-        // 문항 미설정 → 선택 페이지로
         router.push('/select-questions')
         return
       }
 
-      // 선택 문항 + 공통 문항(30번) 조회
+      // 하드코딩 문항에서 선택 순서대로 매칭
       const questionIds = userQs.map((uq) => uq.question_id)
+      const orderedQs = questionIds
+        .map((id) => QUESTIONS.find((q) => q.id === id))
+        .filter(Boolean) as Question[]
 
-      const [{ data: selectedQs }, { data: commonQ }] = await Promise.all([
-        supabase.from('questions').select('*').in('id', questionIds),
-        supabase.from('questions').select('*').eq('is_common', true).single(),
-      ])
-
-      if (!selectedQs || selectedQs.length === 0) {
-        setInitError('문항 데이터를 불러올 수 없습니다.')
+      if (orderedQs.length === 0) {
+        setInitError('선택된 문항을 찾을 수 없습니다.')
         setLoading(false)
         return
       }
 
-      // 선택 순서(order_num)대로 정렬 후 공통 문항 마지막에 추가
-      const orderedQs = questionIds
-        .map((id) => selectedQs.find((q) => q.id === id))
-        .filter(Boolean) as Question[]
-
-      if (commonQ) orderedQs.push(commonQ)
+      orderedQs.push(FINAL_QUESTION)
       setQuestions(orderedQs)
 
       // 새 녹음 세션 생성
@@ -110,7 +100,7 @@ export default function SessionPage() {
   }, [router])
 
   const currentQ = questions[currentIdx]
-  const isFreeTalk = currentQ?.is_common ?? false
+  const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
   // TTS: 문항 변경 시 자동 읽기
@@ -163,11 +153,10 @@ export default function SessionPage() {
     }
   }, [recording, sessionId, currentQ, currentIdx, isFreeTalk, profileId, stopRec, sttEnabled, stopSTT, transcript, total])
 
-  // handleStop을 ref에 보관해 타이머 interval stale closure 방지
   const handleStopRef = useRef(handleStop)
   useEffect(() => { handleStopRef.current = handleStop }, [handleStop])
 
-  // 30번 자유 이야기 3분 타이머
+  // 자유 이야기 3분 타이머
   useEffect(() => {
     if (recording && isFreeTalk) {
       setElapsed(0)
