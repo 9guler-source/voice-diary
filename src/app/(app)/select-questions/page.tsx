@@ -70,29 +70,33 @@ export default function SelectQuestionsPage() {
         setSelected(existing.map((e) => e.question_id))
       }
 
-      // ── 5. 문항 목록 조회 ──
-      const { data: qs, error: qsErr } = await supabase
+      // ── 5. 문항 목록 조회 (싱글턴 캐시 없이 직접 createClient) ──
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const { createClient } = await import('@supabase/supabase-js')
+      const client = createClient(supabaseUrl, supabaseKey, {
+        db: { schema: 'voice_diary' }
+      })
+      const { data, error } = await client
         .from('questions')
         .select('*')
         .eq('is_common', false)
         .order('category')
-        .order('order_hint')
 
-      console.log('[SelectQ] questions:', qs?.length ?? 0, 'error:', qsErr?.message ?? null)
-      if (qs && qs.length > 0) console.log('[SelectQ] sample:', qs[0])
+      console.log('[SelectQ] questions:', data?.length, error)
 
-      if (qsErr) {
-        setInitError(`문항 조회 실패: ${qsErr.message}`)
+      if (error) {
+        setInitError(`문항 조회 실패: ${error.message}`)
         setLoading(false)
         return
       }
-      if (!qs || qs.length === 0) {
+      if (!data || data.length === 0) {
         setInitError('표시할 문항이 없습니다. Supabase SQL Editor에서 마이그레이션(001번)을 실행했는지 확인해 주세요.')
         setLoading(false)
         return
       }
 
-      setQuestions(qs)
+      setQuestions(data)
       setLoading(false)
     }
 
