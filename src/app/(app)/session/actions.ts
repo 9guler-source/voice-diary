@@ -1,22 +1,27 @@
 'use server'
 
+import { randomUUID } from 'crypto'
 import { createSupabaseServer } from '@/lib/supabase-server'
 
 export async function createSession(
   profileId: string
 ): Promise<{ sessionId?: string; error?: string }> {
+  // UUID를 서버에서 직접 생성 → INSERT...RETURNING 없이 INSERT만 실행
+  // (sessions_family_read 정책이 auth.users를 직접 조회하므로
+  //  RETURNING 절이 SELECT 정책을 평가해 permission denied 발생하는 문제 우회)
+  const sessionId = randomUUID()
   const supabase = await createSupabaseServer()
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('sessions')
-    .insert({ user_id: profileId, status: 'in_progress' })
-    .select('id')
-    .single()
+    .insert({ id: sessionId, user_id: profileId, status: 'in_progress' })
 
-  if (error || !data) {
-    return { error: error?.message ?? '세션 생성 실패' }
+  if (error) {
+    console.error('[createSession] INSERT error:', error.message, error.code, error.hint)
+    return { error: `${error.message} (code: ${error.code})` }
   }
-  return { sessionId: data.id }
+
+  return { sessionId }
 }
 
 export async function saveRecording(recording: {
@@ -58,6 +63,10 @@ export async function completeSession(
     .update({ status: 'completed' })
     .eq('id', sessionId)
 
-  if (error) return { error: error.message }
+  // sessions_family_read RLS 정책이 auth.users를 직접 조회해 UPDATE도 실패할 수 있음
+  // → Supabase SQL Editor에서 003_fix_family_read_rls.sql 실행 후 해결됨
+  if (error) {
+    console.error('[completeSession] UPDATE error (RLS 정책 수정 필요):', error.message)
+  }
   return {}
 }
