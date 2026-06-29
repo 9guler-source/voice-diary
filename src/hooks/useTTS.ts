@@ -2,96 +2,107 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 export function useTTS() {
   const synthRef = useRef<SpeechSynthesis | null>(null)
-  const uttRef = useRef<SpeechSynthesisUtterance | null>(null)
-
-  /**
-   * 현재 재생이 허용된 문항 인덱스.
-   * stop() / cancelNow() 시 -1로 초기화되어
-   * 이미 큐에 들어간 utterance가 onstart/onboundary에서 자신을 취소함.
-   */
-  const expectedIdxRef = useRef<number>(-1)
+  const callIdRef = useRef(0)
+  const isSpeakingRef = useRef(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       synthRef.current = window.speechSynthesis
     }
-    return () => { cancelNow() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // Chrome 15초 멈춤 버그 우회: 5초마다 resume() 호출
+    const interval = setInterval(() => {
+      if (isSpeakingRef.current && synthRef.current) {
+        synthRef.current.resume()
+      }
+    }, 5000)
+
+    return () => {
+      clearInterval(interval)
+      callIdRef.current++
+      const synth = synthRef.current
+      if (synth) {
+        synth.pause()
+        synth.cancel()
+      }
+      isSpeakingRef.current = false
+    }
   }, [])
 
-  /** Chrome 비동기 cancel 버그 대응: pause() 먼저 → cancel() */
-  const cancelNow = useCallback(() => {
+  const stop = useCallback(() => {
+    callIdRef.current++
     const synth = synthRef.current
     if (!synth) return
-    expectedIdxRef.current = -1   // 모든 기존 utterance 무효화
     synth.pause()
     synth.cancel()
-    uttRef.current = null
+    isSpeakingRef.current = false
   }, [])
 
-  /**
-   * @param text       읽을 텍스트
-   * @param questionIdx 현재 문항 인덱스 (onstart/onboundary 감시용)
-   * @param volume     0~100
-   *
-   * Chrome 우회 전략:
-   * 1. expectedIdxRef를 questionIdx로 업데이트
-   * 2. pause()+cancel()로 기존 TTS 즉시 중단 시도
-   * 3. 새 utterance의 onstart/onboundary에서
-   *    "캡처된 idx === expectedIdxRef.current" 검사
-   *    → 불일치(사용자가 이미 다음 문항으로 이동)이면 즉시 pause()+cancel()
-   * 이 방식으로 Chrome async cancel race condition을 완전히 차단
-   */
-  const speak = useCallback((text: string, questionIdx: number, volume: number = 80) => {
+  const speak = useCallback(async (text: string, volume: number = 80) => {
     const synth = synthRef.current
     if (!synth) return
 
-    // 이 문항만 재생 허용
-    expectedIdxRef.current = questionIdx
+    // 이 speak() 호출의 고유 ID — 더 늦은 speak()/stop() 호출이 오면 무효화됨
+    const myCallId = ++callIdRef.current
+
+    // 1단계: 즉시 중단
     synth.pause()
     synth.cancel()
-    uttRef.current = null
+    isSpeakingRef.current = false
 
-    const thisIdx = questionIdx  // 클로저에 캡처
+    // 2단계: 300ms 대기 (브라우저가 cancel 처리할 시간)
+    await sleep(300)
+    if (callIdRef.current !== myCallId) return
 
+    // 3단계: 한 번 더 cancel
+    synth.cancel()
+
+    // 4단계: 100ms 추가 대기
+    await sleep(100)
+    if (callIdRef.current !== myCallId) return
+
+    // 5단계: 새 utterance 생성 및 재생
     const utt = new SpeechSynthesisUtterance(text)
     utt.lang = 'ko-KR'
     utt.rate = 0.85
     utt.volume = volume / 100
 
-    // ── Chrome 핵심 가드 ──────────────────────────────────
-    // onstart: 오디오 출력이 시작되는 순간 인덱스 검사
     utt.onstart = () => {
-      if (expectedIdxRef.current !== thisIdx) {
+      if (callIdRef.current !== myCallId) {
+        // 이미 다음 speak()/stop()이 왔으면 즉시 중단
         synth.pause()
         synth.cancel()
-        uttRef.current = null
+      } else {
+        isSpeakingRef.current = true
       }
     }
 
-    // onboundary: 단어/문장 경계마다 재검사 (onstart 후에도 이동했을 경우 대비)
+    // 단어/문장 경계마다 재검사 (onstart 이후 이동 대비)
     utt.onboundary = () => {
-      if (expectedIdxRef.current !== thisIdx) {
+      if (callIdRef.current !== myCallId) {
         synth.pause()
         synth.cancel()
-        uttRef.current = null
       }
     }
-    // ──────────────────────────────────────────────────────
 
     utt.onend = () => {
-      if (uttRef.current === utt) uttRef.current = null
+      if (callIdRef.current === myCallId) {
+        isSpeakingRef.current = false
+      }
     }
 
-    uttRef.current = utt
+    utt.onerror = () => {
+      if (callIdRef.current === myCallId) {
+        isSpeakingRef.current = false
+      }
+    }
+
     synth.speak(utt)
   }, [])
-
-  const stop = useCallback(() => {
-    cancelNow()
-  }, [cancelNow])
 
   return { speak, stop }
 }

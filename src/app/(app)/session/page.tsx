@@ -17,6 +17,8 @@ import { createSession, saveRecording, completeSession } from './actions'
 
 const FREE_TALK_LIMIT = 180
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 export default function SessionPage() {
   const router = useRouter()
   const [questions, setQuestions] = useState<Question[]>([])
@@ -115,20 +117,32 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 1000ms 후 새 문항 읽기
-  // speak(text, questionIdx) 로 utterance에 인덱스를 심어
-  // onstart/onboundary에서 stale utterance를 자기 자신이 취소함
+  // TTS: 문항 변경 시 즉시 stop → 강제 대기 → speak
+  // speak() 내부에서 callId로 stale utterance를 차단하므로 항상 마지막 호출만 재생됨
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
-    stopTTS()                              // expectedIdx=-1, pause()+cancel()
-    const capturedIdx = currentIdx
-    const id = setTimeout(() => {
-      stopTTS()                            // 재생 직전 한 번 더
-      speak(currentQ.content, capturedIdx) // questionIdx 전달 → 가드 활성화
-    }, 1000)
+
+    stopTTS()  // 즉시 중단 + callId 무효화
+
+    let cancelled = false
+
+    const run = async () => {
+      // 문항 이동 후 브라우저가 완전히 정리될 시간 확보
+      await sleep(600)
+      if (cancelled) return
+
+      // 새 문항 데이터는 이미 currentQ에 반영됨
+      await sleep(200)
+      if (cancelled) return
+
+      void speak(currentQ.content)
+    }
+
+    void run()
+
     return () => {
-      clearTimeout(id)
-      stopTTS()                            // cleanup 시에도 cancel
+      cancelled = true
+      stopTTS()
     }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak, stopTTS])
 
