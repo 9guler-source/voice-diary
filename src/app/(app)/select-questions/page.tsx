@@ -14,6 +14,75 @@ interface Question {
 
 const REQUIRED = 29
 
+async function fetchQuestions(supabaseUrl: string, anonKey: string): Promise<Question[]> {
+  const base = `${supabaseUrl}/rest/v1/questions`
+
+  // ── Method 1: Accept-Profile + Content-Profile ──
+  const r1 = await fetch(`${base}?is_common=eq.false&order=category`, {
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      'Accept-Profile': 'voice_diary',
+      'Content-Profile': 'voice_diary',
+      'Content-Type': 'application/json',
+    },
+  })
+  const d1 = await r1.json()
+  console.log('[SelectQ] Method1 (Content-Profile):', r1.status, Array.isArray(d1) ? d1.length : d1)
+  if (Array.isArray(d1) && d1.length > 0) return d1
+
+  // ── Method 2: explicit select + order ──
+  const r2 = await fetch(
+    `${base}?select=id,category,content,is_common,order_hint&is_common=eq.false&order=category,order_hint`,
+    {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Accept-Profile': 'voice_diary',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+  const d2 = await r2.json()
+  console.log('[SelectQ] Method2 (explicit select):', r2.status, Array.isArray(d2) ? d2.length : d2)
+  if (Array.isArray(d2) && d2.length > 0) return d2
+
+  // ── Method 3: minimal headers ──
+  const r3 = await fetch(`${base}?select=*&is_common=eq.false`, {
+    method: 'GET',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      'Accept-Profile': 'voice_diary',
+    },
+  })
+  const d3 = await r3.json()
+  console.log('[SelectQ] Method3 (minimal):', r3.status, Array.isArray(d3) ? d3.length : d3)
+  if (Array.isArray(d3) && d3.length > 0) return d3
+
+  // ── 진단: 필터 없이 전체 조회 ──
+  const rAll = await fetch(`${base}?select=id,is_common&limit=10`, {
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      'Accept-Profile': 'voice_diary',
+    },
+  })
+  const dAll = await rAll.json()
+  console.log('[SelectQ] ALL (no filter):', rAll.status, Array.isArray(dAll) ? dAll.length : dAll, dAll?.[0])
+
+  const diagInfo =
+    `Method1 status=${r1.status} count=${Array.isArray(d1) ? d1.length : JSON.stringify(d1)}\n` +
+    `Method2 status=${r2.status} count=${Array.isArray(d2) ? d2.length : JSON.stringify(d2)}\n` +
+    `Method3 status=${r3.status} count=${Array.isArray(d3) ? d3.length : JSON.stringify(d3)}\n` +
+    `ALL(no filter) status=${rAll.status} count=${Array.isArray(dAll) ? dAll.length : JSON.stringify(dAll)}\n` +
+    `첫 행: ${JSON.stringify(dAll?.[0] ?? null)}\n\n` +
+    `→ Supabase SQL Editor에서 확인:\n` +
+    `SELECT is_common, count(*) FROM voice_diary.questions GROUP BY is_common;`
+
+  throw new Error(diagInfo)
+}
+
 export default function SelectQuestionsPage() {
   const router = useRouter()
   const profileIdRef = useRef<string | null>(null)
@@ -59,43 +128,18 @@ export default function SelectQuestionsPage() {
         .order('order_num')
       if (existing?.length) setSelected(existing.map((e) => e.question_id))
 
-      // ── 문항 조회 (fetch + Accept-Profile 로 voice_diary 스키마 직접 지정) ──
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/questions?is_common=eq.false&order=category`,
-        {
-          headers: {
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
-            'Accept-Profile': 'voice_diary',
-            'Content-Type': 'application/json',
-          },
-        }
+      // ── 문항 조회 (세 가지 방법 순차 시도) ──
+      const qs = await fetchQuestions(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       )
-      const data = await res.json()
-      console.log('[SelectQ] fetch result:', data?.length, res.status)
-
-      if (!res.ok) {
-        setInitError(
-          `문항 조회 실패 (HTTP ${res.status})\n${JSON.stringify(data, null, 2)}`
-        )
-        setLoading(false)
-        return
-      }
-      if (!Array.isArray(data) || data.length === 0) {
-        setInitError(
-          `문항 없음 (status ${res.status})\n응답: ${JSON.stringify(data)}\n\nSupabase 대시보드 → Settings → API → Exposed Schemas에 voice_diary가 있는지 확인하세요.`
-        )
-        setLoading(false)
-        return
-      }
-
-      setQuestions(data)
+      setQuestions(qs)
       setLoading(false)
     }
 
     load().catch((err: unknown) => {
-      console.error('[SelectQ] unexpected:', err)
-      setInitError(String(err))
+      console.error('[SelectQ]:', err)
+      setInitError(err instanceof Error ? err.message : String(err))
       setLoading(false)
     })
   }, [router])
@@ -113,13 +157,8 @@ export default function SelectQuestionsPage() {
     setSaving(true)
     setSaveError('')
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { setSaveError('세션이 만료됐습니다. 다시 로그인해 주세요.'); setSaving(false); return }
-
-    // 기존 선택 삭제
     await supabase.from('user_questions').delete().eq('user_id', profileIdRef.current)
 
-    // 새 선택 저장
     const rows = selected.map((questionId, i) => ({
       user_id: profileIdRef.current!,
       question_id: questionId,
@@ -151,12 +190,12 @@ export default function SelectQuestionsPage() {
     )
   }
 
-  // ── 에러 ──
+  // ── 에러 / 진단 결과 ──
   if (initError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 py-10">
-        <p className="text-red-500 text-sm font-medium text-center">문항을 불러오지 못했습니다</p>
-        <pre className="w-full bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-auto whitespace-pre-wrap break-all">
+        <p className="text-red-500 text-sm font-medium">문항을 불러오지 못했습니다</p>
+        <pre className="w-full bg-gray-900 text-green-400 rounded-xl p-4 text-xs overflow-auto whitespace-pre-wrap break-all max-h-96">
           {initError}
         </pre>
         <button
