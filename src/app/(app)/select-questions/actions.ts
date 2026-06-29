@@ -6,7 +6,7 @@ export async function saveSelections(
   profileId: string,
   selectedIds: number[]
 ): Promise<{ error?: string }> {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
 
   // 기존 선택 삭제
   const { error: delErr } = await supabase

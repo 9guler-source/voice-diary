@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Mic, ChevronRight } from 'lucide-react'
 
 async function getSessions() {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return []
 

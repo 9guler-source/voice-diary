@@ -5,7 +5,7 @@ import { ChevronLeft } from 'lucide-react'
 type Props = { params: { id: string } }
 
 async function getSessionData(id: string) {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
 
   const { data: session } = await supabase
     .from('sessions')

@@ -2,9 +2,9 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Database } from './database.types'
 
-export function createSupabaseServer() {
-  const cookieStore = cookies()
-  return createServerClient<Database, 'voice_diary'>(
+export async function createSupabaseServer() {
+  const cookieStore = await cookies()
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -13,8 +13,13 @@ export function createSupabaseServer() {
         getAll() {
           return cookieStore.getAll()
         },
-        // 서버 컴포넌트는 쿠키 쓰기 불가 — 미들웨어에서 갱신
-        setAll() {},
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {}
+        },
       },
     }
   )

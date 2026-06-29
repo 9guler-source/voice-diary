@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Mic, BookOpen } from 'lucide-react'
 
 async function getData() {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
 

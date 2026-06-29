@@ -6,7 +6,7 @@ import type { Database } from '@/lib/database.types'
 type Question = Database['voice_diary']['Tables']['questions']['Row']
 
 export default async function SelectQuestionsPage() {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
 
   // ── 인증 확인 ──
   const { data: { session } } = await supabase.auth.getSession()
@@ -41,6 +41,10 @@ export default async function SelectQuestionsPage() {
     .eq('is_common', false)
     .order('category')
     .order('order_hint')
+
+  console.log('[SERVER] data count:', questions?.length)
+  console.log('[SERVER] error:', error)
+  console.log('[SERVER] url:', process.env.NEXT_PUBLIC_SUPABASE_URL)
 
   if (error) {
     return (

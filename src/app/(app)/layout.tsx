@@ -3,7 +3,7 @@ import { createSupabaseServer } from '@/lib/supabase-server'
 import TabBar from '@/components/layout/TabBar'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createSupabaseServer()
+  const supabase = await createSupabaseServer()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) redirect('/login')
 
