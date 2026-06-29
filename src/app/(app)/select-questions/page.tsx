@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServer } from '@/lib/supabase-server'
 import QuestionSelector from './QuestionSelector'
 
-export default async function SelectQuestionsPage() {
+type Props = { searchParams: { from?: string } }
+
+export default async function SelectQuestionsPage({ searchParams }: Props) {
   const supabase = await createSupabaseServer()
 
   const { data: { session } } = await supabase.auth.getSession()
@@ -19,7 +21,10 @@ export default async function SelectQuestionsPage() {
     .from('user_questions')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', profile.id)
-  if ((count ?? 0) >= 29) redirect('/home')
+
+  // 설정에서 재선택하는 경우에는 이미 29개여도 통과
+  const isReselect = searchParams.from === 'settings'
+  if ((count ?? 0) >= 29 && !isReselect) redirect('/home')
 
   const { data: existing } = await supabase
     .from('user_questions')
@@ -35,6 +40,7 @@ export default async function SelectQuestionsPage() {
     <QuestionSelector
       profileId={profile.id}
       initialSelected={initialSelected}
+      from={searchParams.from}
     />
   )
 }

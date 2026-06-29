@@ -6,10 +6,52 @@ import { supabase } from '@/lib/supabase'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { LogOut, Plus, Trash2 } from 'lucide-react'
+import { LogOut, Plus, Trash2, PenLine } from 'lucide-react'
+import Link from 'next/link'
 import type { Database } from '@/lib/database.types'
+import { QUESTIONS } from '@/lib/questions'
+import type { Question } from '@/lib/questions'
 
 type Guardian = Database['voice_diary']['Tables']['guardians']['Row']
+type UserQuestion = { question_id: number; order_num: number }
+
+// 카테고리별 선택 문항 목록 표시
+function QuestionList({ userQuestions }: { userQuestions: UserQuestion[] }) {
+  const orderMap = new Map(userQuestions.map((uq) => [uq.question_id, uq.order_num]))
+  const selectedIds = new Set(userQuestions.map((uq) => uq.question_id))
+
+  const grouped: Record<string, { q: Question; orderNum: number }[]> = {}
+  for (const q of QUESTIONS) {
+    if (!selectedIds.has(q.id)) continue
+    if (!grouped[q.category]) grouped[q.category] = []
+    grouped[q.category].push({ q, orderNum: orderMap.get(q.id) ?? 0 })
+  }
+  for (const arr of Object.values(grouped)) {
+    arr.sort((a, b) => a.orderNum - b.orderNum)
+  }
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(grouped).map(([category, items]) => (
+        <div key={category}>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
+            {category}
+          </p>
+          <div className="space-y-1.5">
+            {items.map(({ q, orderNum }) => (
+              <div key={q.id} className="flex items-start gap-2">
+                <span className="text-xs font-bold text-amber flex-shrink-0 w-8 mt-0.5">
+                  {orderNum}번
+                </span>
+                <span className="text-sm text-mid leading-snug">{q.content}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const pwSchema = z.object({
   current: z.string().min(1, '현재 비밀번호를 입력해 주세요'),
@@ -29,6 +71,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const [profileId, setProfileId] = useState<string | null>(null)
   const [guardians, setGuardians] = useState<Guardian[]>([])
+  const [userQuestions, setUserQuestions] = useState<UserQuestion[]>([])
   const [pwMsg, setPwMsg] = useState('')
   const [guardianMsg, setGuardianMsg] = useState('')
 
@@ -54,6 +97,13 @@ export default function SettingsPage() {
         .select('*')
         .eq('user_id', profile.id)
       setGuardians(gs ?? [])
+
+      const { data: uqs } = await supabase
+        .from('user_questions')
+        .select('question_id, order_num')
+        .eq('user_id', profile.id)
+        .order('order_num')
+      setUserQuestions(uqs ?? [])
     }
     load()
   }, [router])
@@ -97,6 +147,30 @@ export default function SettingsPage() {
   return (
     <div className="px-4 pt-12 pb-4 space-y-6">
       <h1 className="text-2xl font-bold text-deep">설정</h1>
+
+      {/* ── 내 질문 목록 ── */}
+      <section className="bg-warm-white border border-muted/20 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-deep">내 질문 목록</h2>
+          {userQuestions.length > 0 && (
+            <span className="text-xs text-muted">{userQuestions.length}개 선택됨</span>
+          )}
+        </div>
+
+        {userQuestions.length === 0 ? (
+          <p className="text-sm text-muted">선택된 문항이 없습니다.</p>
+        ) : (
+          <QuestionList userQuestions={userQuestions} />
+        )}
+
+        <Link
+          href="/select-questions?from=settings"
+          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-amber/50 text-amber-dark text-sm font-medium hover:bg-amber/10 transition-colors"
+        >
+          <PenLine size={15} />
+          29개 문항 다시 선택하기
+        </Link>
+      </section>
 
       <section className="bg-warm-white border border-muted/20 rounded-2xl p-5 space-y-4">
         <h2 className="font-semibold text-deep">비밀번호 변경</h2>

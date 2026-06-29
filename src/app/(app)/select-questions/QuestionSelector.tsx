@@ -9,11 +9,12 @@ import type { Question } from '@/lib/questions'
 interface Props {
   profileId: string
   initialSelected: number[]
+  from?: string
 }
 
 const REQUIRED = 29
 
-export default function QuestionSelector({ profileId, initialSelected }: Props) {
+export default function QuestionSelector({ profileId, initialSelected, from }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<number[]>(initialSelected)
   const [saving, setSaving] = useState(false)
@@ -39,7 +40,7 @@ export default function QuestionSelector({ profileId, initialSelected }: Props) 
       return
     }
 
-    router.push('/home')
+    router.push(from === 'settings' ? '/settings' : '/home')
   }
 
   const grouped = QUESTIONS.reduce<Record<string, Question[]>>((acc, q) => {
