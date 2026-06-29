@@ -13,6 +13,7 @@ import WaveformCanvas from '@/components/ui/WaveformCanvas'
 import Toggle from '@/components/ui/Toggle'
 import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
 import type { Question } from '@/lib/questions'
+import { createSession, saveRecording, completeSession } from './actions'
 
 const FREE_TALK_LIMIT = 180
 
@@ -86,22 +87,17 @@ export default function SessionPage() {
       orderedQs.push(FINAL_QUESTION)
       setQuestions(orderedQs)
 
-      // 새 녹음 세션 생성
-      const { data: newSession, error: sessionError } = await supabase
-        .from('sessions')
-        .insert({ user_id: profile.id, status: 'in_progress' })
-        .select('id')
-        .single()
+      // 새 녹음 세션 생성 (서버 액션)
+      const sessionResult = await createSession(profile.id)
+      console.log('[SESSION] createSession result:', sessionResult)
 
-      console.log('[SESSION] newSession:', newSession?.id, '/ error:', sessionError?.message, sessionError?.code, sessionError?.details)
-
-      if (sessionError || !newSession) {
-        setInitError('녹음 세션을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.')
+      if (sessionResult.error || !sessionResult.sessionId) {
+        setInitError(`녹음 세션을 시작할 수 없습니다: ${sessionResult.error ?? '알 수 없는 오류'}`)
         setLoading(false)
         return
       }
 
-      setSessionId(newSession.id)
+      setSessionId(sessionResult.sessionId)
       setLoading(false)
     }
     init()
@@ -138,22 +134,22 @@ export default function SessionPage() {
       }
     }
 
-    await supabase.from('recordings').insert({
-      session_id: sessionId,
-      question_id: currentQ.id,
-      question_order: currentIdx + 1,
-      audio_url: audioUrl ?? null,
-      duration_sec: result.durationSec,
-      max_decibel: result.maxDecibel,
-      avg_decibel: result.avgDecibel,
-      is_free_talk: isFreeTalk,
-      stt_text: sttEnabled ? transcript : null,
+    await saveRecording({
+      sessionId,
+      questionId: currentQ.id,
+      questionOrder: currentIdx + 1,
+      audioUrl: audioUrl ?? null,
+      durationSec: result.durationSec,
+      maxDecibel: result.maxDecibel,
+      avgDecibel: result.avgDecibel,
+      isFreeTalk,
+      sttText: sttEnabled ? transcript : null,
     })
 
     setSaving(false)
 
     if (currentIdx + 1 >= total) {
-      await supabase.from('sessions').update({ status: 'completed' }).eq('id', sessionId)
+      await completeSession(sessionId)
       setDone(true)
     } else {
       setCurrentIdx((i) => i + 1)
