@@ -46,6 +46,8 @@ export function useSTT() {
   const [listening, setListening] = useState(false)
   const [error, setError] = useState('')
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
+  // true: 녹음 중 dropout 시 자동 재시작 허용 / false: 의도적 stop 이후 재시작 금지
+  const shouldRestartRef = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -79,11 +81,33 @@ export function useSTT() {
     rec.onerror = (e: { error: string }) => {
       if (e.error === 'not-allowed') {
         setError('마이크 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해 주세요.')
+        shouldRestartRef.current = false
+      } else if (e.error === 'aborted') {
+        // stop() 호출로 인한 중단 — 재시작 불필요
+        shouldRestartRef.current = false
       }
+      // 'no-speech', 'network' 등은 shouldRestart 그대로 유지 → onend에서 재시작
       setListening(false)
     }
 
-    rec.onend = () => setListening(false)
+    rec.onend = () => {
+      setListening(false)
+      setInterim('')
+      if (shouldRestartRef.current && recognitionRef.current) {
+        // 드롭아웃 복구: 300ms 후 재시작 (즉시 재시작 시 InvalidStateError 방지)
+        setTimeout(() => {
+          if (shouldRestartRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start()
+              setListening(true)
+            } catch {
+              // 이미 실행 중이거나 권한 없음 — 무시
+            }
+          }
+        }, 300)
+      }
+    }
+
     recognitionRef.current = rec
   }, [])
 
@@ -92,11 +116,13 @@ export function useSTT() {
     setTranscript('')
     setInterim('')
     setError('')
+    shouldRestartRef.current = true
     recognitionRef.current.start()
     setListening(true)
   }, [])
 
   const stop = useCallback(() => {
+    shouldRestartRef.current = false  // 의도적 중단 — onend에서 재시작 금지
     recognitionRef.current?.stop()
     setListening(false)
     setInterim('')

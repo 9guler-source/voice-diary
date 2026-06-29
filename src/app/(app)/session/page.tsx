@@ -110,19 +110,20 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 500ms 후 새 문항 읽기
+  // TTS: 문항 변경 시 직전 TTS 즉시 취소 → 1000ms 후 새 문항 읽기
+  // cleanup에서도 cancel하여 stale effect가 남아있어도 재생 차단
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
-    window.speechSynthesis?.cancel()
+    stopTTS()                          // pause()+cancel() 즉시 실행
     const id = setTimeout(() => {
-      window.speechSynthesis?.cancel()
+      stopTTS()                        // 재생 직전 한 번 더 확인
       speak(currentQ.content)
-    }, 500)
+    }, 1000)
     return () => {
       clearTimeout(id)
-      window.speechSynthesis?.cancel()
+      stopTTS()                        // cleanup 시에도 cancel
     }
-  }, [currentIdx, currentQ, ttsEnabled, recording, speak])
+  }, [currentIdx, currentQ, ttsEnabled, recording, speak, stopTTS])
 
   // 문항 이동 시 STT 자막 초기화
   useEffect(() => {
@@ -131,6 +132,7 @@ export default function SessionPage() {
 
   const handleStop = useCallback(async () => {
     if (!recording || !sessionId || !currentQ) return
+    stopTTS()               // 녹음 완료 시 즉시 TTS 중단
     setSaving(true)
     const result = await stopRec()
     if (sttEnabled) stopSTT()
@@ -174,7 +176,7 @@ export default function SessionPage() {
       setCurrentIdx((i) => i + 1)
       setElapsed(0)
     }
-  }, [recording, sessionId, currentQ, currentIdx, isFreeTalk, profileId, stopRec, sttEnabled, stopSTT, transcript, total])
+  }, [recording, sessionId, currentQ, currentIdx, isFreeTalk, profileId, stopRec, stopTTS, sttEnabled, stopSTT, transcript, total])
 
   const handleStopRef = useRef(handleStop)
   useEffect(() => { handleStopRef.current = handleStop }, [handleStop])
