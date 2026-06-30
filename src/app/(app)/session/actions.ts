@@ -34,7 +34,9 @@ export async function saveSession(
 
   if (sessionError || !session) {
     console.error("[voice-diary] 세션 저장 실패:", sessionError);
-    return { error: "세션 저장에 실패했습니다. 잠시 후 다시 시도해주세요." };
+    return {
+      error: `세션 저장에 실패했습니다. [디버그: ${sessionError?.message ?? "알 수 없는 오류"} / code: ${sessionError?.code ?? "-"}]`,
+    };
   }
 
   const rows = recordings.map((r) => ({
@@ -49,7 +51,9 @@ export async function saveSession(
 
   if (recError) {
     console.error("[voice-diary] 녹음 메타 저장 실패:", recError);
-    return { error: "녹음 정보 저장 중 일부 오류가 발생했습니다." };
+    return {
+      error: `녹음 정보 저장 중 오류가 발생했습니다. [디버그: ${recError.message} / code: ${recError.code}]`,
+    };
   }
 
   revalidatePath("/records");
