@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
+import { playChime, stopChime } from '@/lib/chime'
 
 export function useTTS() {
   const isSpeakingRef = useRef(false)
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const callIdRef = useRef(0)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -18,10 +19,7 @@ export function useTTS() {
 
     return () => {
       clearInterval(interval)
-      if (pendingTimerRef.current !== null) {
-        clearTimeout(pendingTimerRef.current)
-        pendingTimerRef.current = null
-      }
+      stopChime()
       window.speechSynthesis?.cancel()
       isSpeakingRef.current = false
     }
@@ -29,40 +27,41 @@ export function useTTS() {
 
   const stop = useCallback(() => {
     if (typeof window === 'undefined') return
-    if (pendingTimerRef.current !== null) {
-      clearTimeout(pendingTimerRef.current)
-      pendingTimerRef.current = null
-    }
+    ++callIdRef.current
     isSpeakingRef.current = false
+    stopChime()
     window.speechSynthesis.cancel()
   }, [])
 
   const speak = useCallback((text: string, volume: number = 80): Promise<void> => {
-    return new Promise<void>((resolve) => {
-      if (typeof window === 'undefined') { resolve(); return }
-
-      // 대기 중인 타이머 취소 + 현재 재생 중단
-      if (pendingTimerRef.current !== null) {
-        clearTimeout(pendingTimerRef.current)
-        pendingTimerRef.current = null
-      }
+    // 기존 TTS + 차임 즉시 중단
+    if (typeof window !== 'undefined') {
       window.speechSynthesis.cancel()
-      isSpeakingRef.current = false
+    }
+    stopChime()
+    isSpeakingRef.current = false
+    const callId = ++callIdRef.current
 
-      const utt = new SpeechSynthesisUtterance(text)
-      utt.lang = 'ko-KR'
-      utt.rate = 0.85
-      utt.volume = volume / 100
-      utt.onend = () => { isSpeakingRef.current = false; resolve() }
-      utt.onerror = () => { isSpeakingRef.current = false; resolve() }
+    return (async () => {
+      if (typeof window === 'undefined') return
 
-      // cancel() 후 500ms 대기 보장 → 브라우저(Safari 포함)가 큐를 비울 시간 확보
-      pendingTimerRef.current = setTimeout(() => {
-        pendingTimerRef.current = null
+      // 멜로디 선행 재생 → 이전 잔여음 마스킹 (1.25초)
+      await playChime(volume)
+
+      // 차임 재생 중 취소됐으면 중단
+      if (callId !== callIdRef.current) return
+
+      await new Promise<void>((resolve) => {
+        const utt = new SpeechSynthesisUtterance(text)
+        utt.lang = 'ko-KR'
+        utt.rate = 0.85
+        utt.volume = volume / 100
+        utt.onend = () => { isSpeakingRef.current = false; resolve() }
+        utt.onerror = () => { isSpeakingRef.current = false; resolve() }
         isSpeakingRef.current = true
         window.speechSynthesis.speak(utt)
-      }, 500)
-    })
+      })
+    })()
   }, [])
 
   return { speak, stop }
