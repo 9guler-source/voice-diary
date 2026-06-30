@@ -252,11 +252,7 @@ export default function SessionRecorder({ userId }: { userId: string }) {
       <div className="px-6 pb-8 space-y-3" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)" }}>
         {(phase === "ready" || phase === "intro") && (
           <>
-            <button
-              onClick={handleStartRecording}
-              disabled={phase === "intro"}
-              className="btn-primary !py-5 text-lg"
-            >
+            <button onClick={handleStartRecording} className="btn-primary !py-5 text-lg">
               🎙️ 녹음 시작
             </button>
             <button onClick={handleSkip} className="btn-secondary !py-3 text-sm">
