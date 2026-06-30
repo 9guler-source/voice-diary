@@ -14,6 +14,7 @@ import Toggle from '@/components/ui/Toggle'
 import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
 import type { Question } from '@/lib/questions'
 import { createSession, saveRecording, completeSession } from './actions'
+import { playChime } from '@/lib/chime'
 
 const FREE_TALK_LIMIT = 180
 const ALL_QUESTIONS = [...QUESTIONS, FINAL_QUESTION]
@@ -199,6 +200,7 @@ export default function SessionPage() {
       await completeSession(sessionId)
       setDone(true)
     } else {
+      await playChime()
       setCurrentIdx((i) => i + 1)
       setElapsed(0)
     }
@@ -250,13 +252,14 @@ export default function SessionPage() {
     if (sttEnabled) startSTT()
   }
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     starterAbortRef.current = true
     stopTTS()
     stopSTT()
     if (currentIdx + 1 >= total) {
       setDone(true)
     } else {
+      await playChime()
       setCurrentIdx((i) => i + 1)
     }
   }
