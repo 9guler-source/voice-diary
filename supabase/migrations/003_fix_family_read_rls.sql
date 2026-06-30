@@ -1,40 +1,25 @@
--- ═══════════════════════════════════════════════════════════════════
--- sessions_family_read, recordings_family_read 정책에서
--- auth.users 직접 조회 제거 → auth.email() 함수로 교체
---
--- 문제: authenticated role은 auth.users 테이블에 SELECT 권한 없음
---       INSERT...RETURNING 또는 SELECT/UPDATE 시 permission denied 발생
--- 해결: auth.email() 은 JWT 클레임에서 이메일을 읽으므로
---       auth.users 조회 없이 동일하게 동작
---
--- Supabase SQL Editor에서 실행:
---   https://supabase.com/dashboard/project/sfeyfxojkyjdbwpkvcdm/sql/new
--- ═══════════════════════════════════════════════════════════════════
+-- 003_fix_family_read_rls.sql
+-- 보호자(가족)가 본인 이메일로 가입 시 피보호자의 세션을 읽을 수 있도록 정책 보강
 
--- sessions_family_read 수정
-DROP POLICY IF EXISTS "sessions_family_read" ON voice_diary.sessions;
-
-CREATE POLICY "sessions_family_read" ON voice_diary.sessions
-  FOR SELECT USING (
-    user_id IN (
-      SELECT g.user_id
-      FROM voice_diary.guardians g
-      WHERE g.email = auth.email()
+drop policy if exists sessions_family_read on voice_diary.sessions;
+create policy sessions_family_read on voice_diary.sessions
+  for select using (
+    exists (
+      select 1 from voice_diary.guardians g
+      join auth.users u on u.id = auth.uid()
+      where g.user_id = sessions.user_id
+        and g.guardian_email = u.email
     )
   );
 
--- recordings_family_read 수정
-DROP POLICY IF EXISTS "recordings_family_read" ON voice_diary.recordings;
-
-CREATE POLICY "recordings_family_read" ON voice_diary.recordings
-  FOR SELECT USING (
-    session_id IN (
-      SELECT s.id
-      FROM voice_diary.sessions s
-      WHERE s.user_id IN (
-        SELECT g.user_id
-        FROM voice_diary.guardians g
-        WHERE g.email = auth.email()
-      )
+drop policy if exists recordings_family_read on voice_diary.recordings;
+create policy recordings_family_read on voice_diary.recordings
+  for select using (
+    exists (
+      select 1 from voice_diary.sessions s
+      join voice_diary.guardians g on g.user_id = s.user_id
+      join auth.users u on u.id = auth.uid()
+      where s.id = recordings.session_id
+        and g.guardian_email = u.email
     )
   );

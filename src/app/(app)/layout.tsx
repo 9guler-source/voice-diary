@@ -1,19 +1,10 @@
-import { redirect } from 'next/navigation'
-import { createSupabaseServer } from '@/lib/supabase-server'
-import TabBar from '@/components/layout/TabBar'
+import BottomNav from "@/components/BottomNav";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createSupabaseServer()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect('/login')
-
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-cream pb-24">
-      {children}
-      <footer className="py-3 text-center">
-        <p className="text-xs text-muted/50">© 2026 Young Sohk Song (宋映錫 · 송영석). All rights reserved.</p>
-      </footer>
-      <TabBar />
+    <div className="flex-1 flex flex-col min-h-screen">
+      <main className="flex-1 flex flex-col">{children}</main>
+      <BottomNav />
     </div>
-  )
+  );
 }

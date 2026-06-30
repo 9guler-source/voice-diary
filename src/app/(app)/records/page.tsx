@@ -1,125 +1,89 @@
-import { createSupabaseServer } from '@/lib/supabase-server'
-import Link from 'next/link'
-import { Mic, ChevronRight } from 'lucide-react'
-import FreeTalkPanel from './FreeTalkPanel'
-import type { FreeTalkItem } from './FreeTalkPanel'
-import { LocalDate } from '@/components/ui/LocalDate'
+import { createClient } from "@/lib/supabase-server";
+import Link from "next/link";
+import { formatDateTimeKo } from "@/lib/dateUtils";
+import FreeTalkPanel from "./FreeTalkPanel";
 
-async function getProfileId(supabase: Awaited<ReturnType<typeof createSupabaseServer>>) {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('auth_user_id', session.user.id)
-    .single()
-  return profile?.id ?? null
-}
+export default async function RecordsPage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
+  const tab = searchParams.tab === "freetalk" ? "freetalk" : "sessions";
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-async function getSessions() {
-  const supabase = await createSupabaseServer()
-  const profileId = await getProfileId(supabase)
-  if (!profileId) return []
+  if (!user) {
+    return <p className="p-6 text-stone-400">로그인이 필요합니다.</p>;
+  }
 
-  const { data } = await supabase
-    .from('sessions')
-    .select('id, recorded_at, total_duration_sec, status')
-    .eq('user_id', profileId)
-    .order('recorded_at', { ascending: false })
-
-  return data ?? []
-}
-
-async function getFreeTalks(): Promise<FreeTalkItem[]> {
-  const supabase = await createSupabaseServer()
-  const profileId = await getProfileId(supabase)
-  if (!profileId) return []
-
-  // 이 유저의 세션 목록 (날짜 포함)
-  const { data: userSessions } = await supabase
-    .from('sessions')
-    .select('id, recorded_at')
-    .eq('user_id', profileId)
-    .order('recorded_at', { ascending: false })
-
-  if (!userSessions?.length) return []
-
-  const sessionIds = userSessions.map((s) => s.id)
-  const sessionDateMap = new Map(userSessions.map((s) => [s.id, s.recorded_at]))
-
-  // 해당 세션들의 자유 이야기 녹음 (audio_url 있는 것만)
-  const { data: recs } = await supabase
-    .from('recordings')
-    .select('id, audio_url, stt_text, session_id')
-    .eq('is_free_talk', true)
-    .not('audio_url', 'is', null)
-    .in('session_id', sessionIds)
-
-  if (!recs) return []
-
-  return recs
-    .filter((r) => r.audio_url)
-    .map((r) => ({
-      id: r.id,
-      session_id: r.session_id,
-      audio_url: r.audio_url as string,
-      stt_text: r.stt_text,
-      recorded_at: sessionDateMap.get(r.session_id) ?? '',
-    }))
-    .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
-}
-
-function formatDuration(sec: number | null) {
-  if (!sec) return '-'
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return m > 0 ? `${m}분 ${s}초` : `${s}초`
-}
-
-export default async function RecordsPage() {
-  const [sessions, freeTalks] = await Promise.all([getSessions(), getFreeTalks()])
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("id, recorded_at, title, selected_questions")
+    .eq("user_id", user.id)
+    .order("recorded_at", { ascending: false });
 
   return (
-    <div className="px-4 pt-12 pb-4">
-      <h1 className="text-2xl font-bold text-deep mb-6">내 기록</h1>
-
-      {/* ── 자유 이야기 모아듣기 ── */}
-      <FreeTalkPanel items={freeTalks} />
-
-      {/* ── 세션 목록 ── */}
-      {sessions.length === 0 ? (
-        <div className="text-center py-20 space-y-4">
-          <Mic size={48} className="mx-auto text-muted" />
-          <p className="text-mid">아직 녹음 기록이 없습니다.</p>
+    <div className="flex-1 flex flex-col">
+      <div className="px-5 pt-6 pb-3">
+        <h1 className="text-lg font-bold text-stone-800 mb-4">내 기록</h1>
+        <div className="flex gap-2">
           <Link
-            href="/session"
-            className="inline-block px-5 py-2.5 rounded-xl bg-amber text-white text-sm font-medium hover:bg-amber-dark transition-colors"
+            href="/records"
+            className={`flex-1 text-center py-2 rounded-xl text-sm font-semibold ${
+              tab === "sessions" ? "bg-brand-600 text-white" : "bg-white border border-stone-300 text-stone-500"
+            }`}
           >
-            첫 녹음 시작하기
+            전체 세션
+          </Link>
+          <Link
+            href="/records?tab=freetalk"
+            className={`flex-1 text-center py-2 rounded-xl text-sm font-semibold ${
+              tab === "freetalk" ? "bg-brand-600 text-white" : "bg-white border border-stone-300 text-stone-500"
+            }`}
+          >
+            자유이야기 모아듣기
           </Link>
         </div>
-      ) : (
-        <>
-          <h2 className="text-sm font-semibold text-mid mb-3">전체 세션</h2>
-          <div className="space-y-3">
-            {sessions.map((s) => (
-              <Link
-                key={s.id}
-                href={`/records/${s.id}`}
-                className="flex items-center justify-between bg-warm-white border border-muted/20 rounded-2xl px-5 py-4 hover:bg-muted/10 transition-colors"
-              >
-                <div>
-                  <LocalDate utc={s.recorded_at} className="font-medium text-deep" />
-                  <p className="text-xs text-muted mt-1">
-                    {s.status === 'completed' ? '완료' : '진행 중'} · {formatDuration(s.total_duration_sec)}
-                  </p>
-                </div>
-                <ChevronRight size={18} className="text-muted" />
-              </Link>
-            ))}
-          </div>
-        </>
-      )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-3">
+        {tab === "sessions" ? (
+          !sessions || sessions.length === 0 ? (
+            <EmptyState />
+          ) : (
+            sessions.map((s) => {
+              const qCount = Array.isArray(s.selected_questions) ? s.selected_questions.length : 0;
+              return (
+                <Link key={s.id} href={`/records/${s.id}`} className="card flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-stone-800">
+                      {s.title || formatDateTimeKo(s.recorded_at)}
+                    </p>
+                    <p className="text-xs text-stone-400 mt-1">{qCount}개 문항 녹음</p>
+                  </div>
+                  <span className="text-stone-300">›</span>
+                </Link>
+              );
+            })
+          )
+        ) : (
+          <FreeTalkPanel userId={user.id} />
+        )}
+      </div>
     </div>
-  )
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="text-center py-20">
+      <p className="text-4xl mb-3">🎙️</p>
+      <p className="text-stone-500">아직 기록한 이야기가 없어요</p>
+      <Link href="/select-questions?mode=session" className="text-brand-600 font-semibold text-sm mt-2 inline-block">
+        첫 이야기 남기러 가기
+      </Link>
+    </div>
+  );
 }

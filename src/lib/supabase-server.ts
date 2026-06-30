@@ -1,26 +1,33 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import type { Database } from './database.types'
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-export async function createSupabaseServer() {
-  const cookieStore = await cookies()
-  return createServerClient<Database>(
+export function createClient() {
+  const cookieStore = cookies();
+
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      db: { schema: 'voice_diary' },
+      db: { schema: "voice_diary" },
       cookies: {
-        getAll() {
-          return cookieStore.getAll()
+        get(name: string) {
+          return cookieStore.get(name)?.value;
         },
-        setAll(cookiesToSet) {
+        set(name: string, value: string, options: CookieOptions) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {}
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            // Server Component에서 호출된 경우 무시 (middleware가 세션 갱신 담당)
+          }
+        },
+        remove(name: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value: "", ...options });
+          } catch {
+            // 무시
+          }
         },
       },
     }
-  )
+  );
 }

@@ -1,163 +1,160 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { saveSelections } from './actions'
-import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
-import type { Question } from '@/lib/questions'
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { ALL_QUESTIONS, CATEGORIES, FINAL_QUESTION } from "@/lib/questions";
 
-interface Props {
-  profileId: string
-  initialSelected: number[]
-  mode: 'session' | 'settings'
-  from?: string
-}
+const MAX_SELECT = 30;
+const FAVORITES_KEY = "voice_diary_favorites";
 
-const SETTINGS_REQUIRED = 29
-const SESSION_MAX = 30
+export default function QuestionSelector({ defaultSelectedIds }: { defaultSelectedIds: number[] }) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<number[]>(
+    defaultSelectedIds.length > 0 ? defaultSelectedIds : []
+  );
+  const [openCategory, setOpenCategory] = useState<string | null>(CATEGORIES[0] ?? null);
+  const [favorites, setFavorites] = useState<number[]>([]);
 
-export default function QuestionSelector({ profileId, initialSelected, mode, from }: Props) {
-  const router = useRouter()
-  const [selected, setSelected] = useState<number[]>(initialSelected)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FAVORITES_KEY);
+      if (raw) setFavorites(JSON.parse(raw));
+    } catch {
+      // 무시
+    }
+  }, []);
 
-  const isSession = mode === 'session'
-  const maxCount = isSession ? SESSION_MAX : SETTINGS_REQUIRED
+  function toggleFavorite(id: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
 
-  // 세션 모드에는 자유 이야기 문항도 포함
-  const allQuestions: Question[] = isSession ? [...QUESTIONS, FINAL_QUESTION] : QUESTIONS
-
-  const toggle = (id: number) => {
+  function toggle(id: number) {
     setSelected((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id)
-      if (prev.length >= maxCount) return prev
-      return [...prev, id]
-    })
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= MAX_SELECT) return prev;
+      return [...prev, id];
+    });
   }
 
-  const handleSave = async () => {
-    if (isSession) {
-      if (selected.length < 1) return
-      // sessionStorage에 저장하고 세션 페이지로 이동
-      sessionStorage.setItem('voice-diary:session-questions', JSON.stringify(selected))
-      router.push('/session')
-      return
+  const grouped = useMemo(() => {
+    const map: Record<string, typeof ALL_QUESTIONS> = {};
+    for (const cat of CATEGORIES) {
+      map[cat] = ALL_QUESTIONS.filter((q) => q.category === cat);
     }
+    return map;
+  }, []);
 
-    // 설정 모드: user_questions에 저장
-    if (selected.length !== SETTINGS_REQUIRED) return
-    setSaving(true)
-    setSaveError('')
-
-    const result = await saveSelections(profileId, selected)
-    if (result.error) {
-      setSaveError(result.error)
-      setSaving(false)
-      return
-    }
-
-    router.push(from === 'settings' ? '/settings' : '/home')
+  function handleStart() {
+    if (selected.length === 0) return;
+    // 선택 순서가 아니라 문항 정의 순서(id)로 정렬하여 자연스러운 진행 순서 보장
+    const ordered = [...selected].sort((a, b) => a - b);
+    sessionStorage.setItem("voice_diary_selected_questions", JSON.stringify(ordered));
+    router.push("/session");
   }
-
-  const grouped = allQuestions.reduce<Record<string, Question[]>>((acc, q) => {
-    if (!acc[q.category]) acc[q.category] = []
-    acc[q.category].push(q)
-    return acc
-  }, {})
-
-  const canStart = isSession ? selected.length >= 1 : selected.length === SETTINGS_REQUIRED
-  const btnLabel = isSession
-    ? (saving ? '이동 중...' : `${selected.length}개 문항으로 녹음 시작 →`)
-    : (saving ? '저장 중...' : '완료')
 
   return (
-    <div className="px-4 pt-10 pb-32">
-      <div className="mb-4">
-        <h1 className="text-xl font-bold text-deep">
-          {isSession ? '이번 녹음의 문항 선택' : '나의 문항 선택'}
-        </h1>
-        <p className="text-sm text-muted mt-1">
-          {isSession
-            ? '이번 녹음에서 답할 문항을 선택하세요. 자유 이야기도 선택할 수 있어요.'
-            : `녹음할 ${SETTINGS_REQUIRED}개 문항을 선택해 주세요.`}
+    <div className="flex-1 flex flex-col">
+      <div className="px-5 pt-6 pb-3 sticky top-0 bg-stone-50 z-10 border-b border-stone-200">
+        <h1 className="text-lg font-bold text-stone-800">오늘 이야기할 문항을 골라주세요</h1>
+        <p className="text-sm text-stone-500 mt-1">
+          최소 1개, 최대 30개까지 자유롭게 선택할 수 있어요 ({selected.length}/{MAX_SELECT})
         </p>
       </div>
 
-      {/* 고정 상단 바 */}
-      <div className="sticky top-0 z-10 bg-cream pt-2 pb-3">
-        <div className="flex items-center justify-between bg-warm-white border border-muted/20 rounded-2xl px-4 py-3 shadow-sm">
-          <div>
-            <span className="text-sm text-mid">선택됨 </span>
-            <span className={`text-lg font-bold ${canStart ? 'text-sage' : 'text-amber'}`}>
-              {selected.length}
-            </span>
-            {isSession ? (
-              <span className="text-sm text-muted"> / {SESSION_MAX} (최소 1개)</span>
-            ) : (
-              <span className="text-sm text-muted"> / {SETTINGS_REQUIRED}</span>
-            )}
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={!canStart || saving}
-            className="px-5 py-2 rounded-xl bg-amber text-white text-sm font-semibold hover:bg-amber-dark transition-colors disabled:opacity-40"
-          >
-            {btnLabel}
-          </button>
-        </div>
-        {saveError && <p className="text-xs text-red-500 text-center mt-1">{saveError}</p>}
-        {isSession && selected.length > 0 && (
-          <p className="text-xs text-sage text-center mt-1">
-            {selected.length}개 선택됨 — 완료 버튼을 눌러 녹음을 시작하세요.
-          </p>
-        )}
-        {!isSession && selected.length >= SETTINGS_REQUIRED && (
-          <p className="text-xs text-sage text-center mt-1">29개 선택 완료! 완료 버튼을 눌러주세요.</p>
-        )}
+      <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3 pb-28">
+        {/* 자유 이야기 항목 - 강제 아님, 일반 문항처럼 선택 */}
+        <QuestionRow
+          q={FINAL_QUESTION}
+          checked={selected.includes(FINAL_QUESTION.id)}
+          isFavorite={favorites.includes(FINAL_QUESTION.id)}
+          onToggle={() => toggle(FINAL_QUESTION.id)}
+          onFavorite={(e) => toggleFavorite(FINAL_QUESTION.id, e)}
+          highlight
+        />
+
+        {CATEGORIES.map((cat) => {
+          const items = grouped[cat];
+          const selectedInCat = items.filter((q) => selected.includes(q.id)).length;
+          const isOpen = openCategory === cat;
+          return (
+            <div key={cat} className="card !p-0 overflow-hidden">
+              <button
+                onClick={() => setOpenCategory(isOpen ? null : cat)}
+                className="w-full flex items-center justify-between px-4 py-3 active:bg-stone-50"
+              >
+                <span className="font-semibold text-stone-700">{cat}</span>
+                <span className="text-xs text-stone-400">
+                  {selectedInCat > 0 ? `${selectedInCat}개 선택됨` : ""} {isOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {isOpen && (
+                <div className="border-t border-stone-100 divide-y divide-stone-100">
+                  {items.map((q) => (
+                    <QuestionRow
+                      key={q.id}
+                      q={q}
+                      checked={selected.includes(q.id)}
+                      isFavorite={favorites.includes(q.id)}
+                      onToggle={() => toggle(q.id)}
+                      onFavorite={(e) => toggleFavorite(q.id, e)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* 카테고리별 문항 목록 */}
-      {Object.entries(grouped).map(([category, qs]) => (
-        <div key={category} className="mb-6">
-          <h2 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2 px-1">
-            {category}
-          </h2>
-          <div className="space-y-2">
-            {qs.map((q) => {
-              const isSelected = selected.includes(q.id)
-              const orderNum = selected.indexOf(q.id) + 1
-              const isDisabled = !isSelected && selected.length >= maxCount
-
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => toggle(q.id)}
-                  disabled={isDisabled}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
-                    isSelected
-                      ? 'bg-amber/10 border-amber/40'
-                      : 'bg-warm-white border-muted/20'
-                  } ${isDisabled ? 'opacity-35 cursor-not-allowed' : 'active:scale-[0.99]'}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold ${
-                      isSelected
-                        ? 'bg-amber border-amber text-white'
-                        : 'border-muted/40 text-transparent'
-                    }`}>
-                      {isSelected ? orderNum : ''}
-                    </div>
-                    <span className={`text-sm leading-snug ${isSelected ? 'text-deep font-medium' : 'text-mid'}`}>
-                      {q.content}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      ))}
+      <div
+        className="sticky bottom-0 bg-stone-50 px-5 pt-3 border-t border-stone-200"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
+      >
+        <button onClick={handleStart} disabled={selected.length === 0} className="btn-primary">
+          {selected.length === 0 ? "문항을 선택해주세요" : `${selected.length}개 문항으로 시작하기`}
+        </button>
+      </div>
     </div>
-  )
+  );
+}
+
+function QuestionRow({
+  q,
+  checked,
+  isFavorite,
+  onToggle,
+  onFavorite,
+  highlight,
+}: {
+  q: { id: number; questionText: string };
+  checked: boolean;
+  isFavorite: boolean;
+  onToggle: () => void;
+  onFavorite: (e: React.MouseEvent) => void;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      onClick={onToggle}
+      className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${
+        highlight ? "card border-brand-300 bg-brand-50" : ""
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="w-5 h-5 accent-brand-600 shrink-0"
+      />
+      <span className="flex-1 text-sm text-stone-700">{q.questionText}</span>
+      <button onClick={onFavorite} className="text-lg shrink-0" aria-label="즐겨찾기">
+        {isFavorite ? "⭐" : "☆"}
+      </button>
+    </div>
+  );
 }

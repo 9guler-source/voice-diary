@@ -1,30 +1,23 @@
-'use server'
+"use server";
 
-import { createSupabaseServer } from '@/lib/supabase-server'
+import { createClient } from "@/lib/supabase-server";
 
-export async function saveSelections(
-  profileId: string,
-  selectedIds: number[]
-): Promise<{ error?: string }> {
-  const supabase = await createSupabaseServer()
+export async function getLastSelectedQuestionIds(): Promise<number[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
 
-  // 기존 선택 삭제
-  const { error: delErr } = await supabase
-    .from('user_questions')
-    .delete()
-    .eq('user_id', profileId)
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("selected_questions")
+    .eq("user_id", user.id)
+    .order("recorded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (delErr) return { error: `기존 선택 삭제 실패: ${delErr.message}` }
-
-  // 새 선택 저장
-  const rows = selectedIds.map((questionId, i) => ({
-    user_id: profileId,
-    question_id: questionId,
-    order_num: i + 1,
-  }))
-
-  const { error: insErr } = await supabase.from('user_questions').insert(rows)
-  if (insErr) return { error: `저장 실패: ${insErr.message}` }
-
-  return {}
+  if (error || !data?.selected_questions) return [];
+  const ids = data.selected_questions;
+  return Array.isArray(ids) ? (ids as number[]) : [];
 }

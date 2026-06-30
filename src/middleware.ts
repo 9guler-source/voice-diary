@@ -1,38 +1,51 @@
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
-import type { Database } from '@/lib/database.types'
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
+
+const PUBLIC_PATHS = ["/login", "/signup", "/auth"];
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  let response = NextResponse.next({ request: { headers: request.headers } });
 
-  const supabase = createServerClient<Database, 'voice_diary'>(
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      db: { schema: 'voice_diary' },
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
+        get(name: string) {
+          return request.cookies.get(name)?.value;
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
+        set(name: string, value: string, options: CookieOptions) {
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          response.cookies.set({ name, value: "", ...options });
         },
       },
     }
-  )
+  );
 
-  // 세션 갱신 (refresh token → access token)
-  await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  return supabaseResponse
+  const path = request.nextUrl.pathname;
+  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p)) || path === "/";
+
+  if (!user && !isPublic) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  if (user && (path === "/login" || path === "/signup")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/home";
+    return NextResponse.redirect(url);
+  }
+
+  return response;
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
-}
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)"],
+};

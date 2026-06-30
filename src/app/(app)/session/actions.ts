@@ -1,100 +1,58 @@
-'use server'
+"use server";
 
-import { randomUUID } from 'crypto'
-import { createSupabaseServer } from '@/lib/supabase-server'
+import { createClient } from "@/lib/supabase-server";
+import { revalidatePath } from "next/cache";
 
-export async function createSession(
-  profileId: string,
-  selectedQuestions: Array<{ question_id: number; order: number }>
-): Promise<{ sessionId?: string; error?: string }> {
-  // UUID를 서버에서 직접 생성 → INSERT...RETURNING 없이 INSERT만 실행
-  // (sessions_family_read 정책이 auth.users를 직접 조회하므로
-  //  RETURNING 절이 SELECT 정책을 평가해 permission denied 발생하는 문제 우회)
-  const sessionId = randomUUID()
-  const supabase = await createSupabaseServer()
+export type RecordingMeta = {
+  questionId: number;
+  questionText: string;
+  filePath: string;
+  durationSeconds: number;
+};
 
-  const { error } = await supabase
-    .from('sessions')
+export async function saveSession(
+  selectedQuestionIds: number[],
+  recordings: RecordingMeta[]
+): Promise<{ sessionId: string } | { error: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "로그인이 필요합니다." };
+  if (recordings.length === 0) return { error: "저장할 녹음이 없습니다." };
+
+  const { data: session, error: sessionError } = await supabase
+    .from("sessions")
     .insert({
-      id: sessionId,
-      user_id: profileId,
-      status: 'in_progress',
-      selected_questions: selectedQuestions,
-    })
+      user_id: user.id,
+      selected_questions: selectedQuestionIds,
+      recorded_at: new Date().toISOString(),
+    } as never)
+    .select("id")
+    .single();
 
-  if (error) {
-    console.error('[createSession] INSERT error:', error.message, error.code, error.hint)
-    return { error: `${error.message} (code: ${error.code})` }
+  if (sessionError || !session) {
+    console.error("[voice-diary] 세션 저장 실패:", sessionError);
+    return { error: "세션 저장에 실패했습니다. 잠시 후 다시 시도해주세요." };
   }
 
-  return { sessionId }
-}
+  const rows = recordings.map((r) => ({
+    session_id: session.id,
+    question_id: r.questionId,
+    question_text: r.questionText,
+    file_path: r.filePath,
+    duration_seconds: r.durationSeconds,
+  }));
 
-export async function saveRecording(recording: {
-  sessionId: string
-  questionId: number
-  questionOrder: number
-  audioUrl: string | null
-  durationSec: number
-  maxDecibel: number
-  avgDecibel: number
-  isFreeTalk: boolean
-  sttText: string | null
-}): Promise<{ error?: string }> {
-  const supabase = await createSupabaseServer()
+  const { error: recError } = await supabase.from("recordings").insert(rows as never);
 
-  // is_free_talk=true 인 경우 DB에서 실제 question_id를 조회해 FK 위반 방지
-  // (코드의 FINAL_QUESTION.id가 DB serial과 다를 수 있음)
-  let questionId = recording.questionId
-  if (recording.isFreeTalk) {
-    const { data: freeQ, error: fqErr } = await supabase
-      .from('questions')
-      .select('id')
-      .eq('is_common', true)
-      .single()
-    if (fqErr || !freeQ) {
-      console.error('[saveRecording] free talk question 조회 실패:', fqErr?.message)
-    } else {
-      questionId = freeQ.id
-      console.log('[saveRecording] free talk question_id resolved:', questionId)
-    }
+  if (recError) {
+    console.error("[voice-diary] 녹음 메타 저장 실패:", recError);
+    return { error: "녹음 정보 저장 중 일부 오류가 발생했습니다." };
   }
 
-  const { error } = await supabase.from('recordings').insert({
-    session_id: recording.sessionId,
-    question_id: questionId,
-    question_order: recording.questionOrder,
-    audio_url: recording.audioUrl,
-    duration_sec: recording.durationSec,
-    max_decibel: recording.maxDecibel,
-    avg_decibel: recording.avgDecibel,
-    is_free_talk: recording.isFreeTalk,
-    stt_text: recording.sttText,
-  })
-
-  if (error) {
-    console.error('[saveRecording] INSERT error:', error.message, error.code, error.hint)
-    return { error: error.message }
-  }
-
-  console.log('[saveRecording] saved order:', recording.questionOrder, 'free_talk:', recording.isFreeTalk, 'audio_url:', recording.audioUrl)
-  return {}
-}
-
-export async function completeSession(
-  sessionId: string
-): Promise<{ error?: string }> {
-  const supabase = await createSupabaseServer()
-
-  const { error } = await supabase
-    .from('sessions')
-    .update({ status: 'completed' })
-    .eq('id', sessionId)
-
-  // sessions_family_read RLS 정책이 auth.users를 직접 조회해 UPDATE도 실패할 수 있음
-  // → Supabase SQL Editor에서 003_fix_family_read_rls.sql 실행 후 해결됨
-  if (error) {
-    console.error('[completeSession] UPDATE error (RLS 정책 수정 필요):', error.message)
-  }
-  return {}
+  revalidatePath("/records");
+  revalidatePath("/home");
+  return { sessionId: session.id };
 }

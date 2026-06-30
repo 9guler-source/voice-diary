@@ -1,166 +1,134 @@
+// voice_diary 스키마 타입 정의
+// 주의: supabase-js v2는 Database 타입에 interface가 아닌 type 별칭을 요구하며
+// __InternalSupabase, Relationships, Views, Functions 필드가 필요합니다.
+
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 export type Database = {
+  __InternalSupabase: { PostgrestVersion: "12" };
   voice_diary: {
     Tables: {
       profiles: {
         Row: {
-          id: string
-          auth_user_id: string
-          name: string
-          birth_date: string | null
-          phone: string | null
-          created_at: string
-          updated_at: string
-        }
+          id: string;
+          email: string;
+          display_name: string | null;
+          created_at: string;
+        };
         Insert: {
-          id?: string
-          auth_user_id: string
-          name: string
-          birth_date?: string | null
-          phone?: string | null
-          created_at?: string
-          updated_at?: string
-        }
+          id: string;
+          email: string;
+          display_name?: string | null;
+          created_at?: string;
+        };
         Update: {
-          name?: string
-          birth_date?: string | null
-          phone?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
+          id?: string;
+          email?: string;
+          display_name?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       guardians: {
         Row: {
-          id: string
-          user_id: string
-          name: string
-          email: string
-          relation: string | null
-          created_at: string
-        }
+          id: string;
+          user_id: string;
+          guardian_email: string;
+          guardian_name: string | null;
+          created_at: string;
+        };
         Insert: {
-          id?: string
-          user_id: string
-          name: string
-          email: string
-          relation?: string | null
-        }
+          id?: string;
+          user_id: string;
+          guardian_email: string;
+          guardian_name?: string | null;
+          created_at?: string;
+        };
         Update: {
-          name?: string
-          email?: string
-          relation?: string | null
-        }
-        Relationships: []
-      }
+          id?: string;
+          user_id?: string;
+          guardian_email?: string;
+          guardian_name?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       questions: {
         Row: {
-          id: number
-          category: string
-          content: string
-          is_common: boolean
-          order_hint: number | null
-          created_at: string
-        }
+          id: number;
+          category: string;
+          question_text: string;
+          tts_text: string;
+          starter_text: string;
+          is_free_talk: boolean;
+          display_order: number;
+        };
         Insert: {
-          category: string
-          content: string
-          is_common?: boolean
-          order_hint?: number | null
-        }
-        Update: {
-          category?: string
-          content?: string
-          is_common?: boolean
-          order_hint?: number | null
-        }
-        Relationships: []
-      }
+          id?: number;
+          category: string;
+          question_text: string;
+          tts_text: string;
+          starter_text: string;
+          is_free_talk?: boolean;
+          display_order: number;
+        };
+        Update: Partial<Database["voice_diary"]["Tables"]["questions"]["Insert"]>;
+        Relationships: [];
+      };
       user_questions: {
-        Row: {
-          id: string
-          user_id: string
-          question_id: number
-          order_num: number
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          question_id: number
-          order_num: number
-        }
-        Update: {
-          order_num?: number
-        }
-        Relationships: []
-      }
+        Row: { id: string; user_id: string; question_id: number; created_at: string };
+        Insert: { id?: string; user_id: string; question_id: number; created_at?: string };
+        Update: { id?: string; user_id?: string; question_id?: number; created_at?: string };
+        Relationships: [];
+      };
       sessions: {
         Row: {
-          id: string
-          user_id: string
-          recorded_at: string
-          total_duration_sec: number | null
-          avg_decibel: number | null
-          max_decibel: number | null
-          status: string
-          selected_questions: Array<{ question_id: number; order: number }> | null
-        }
+          id: string;
+          user_id: string;
+          selected_questions: Json;
+          recorded_at: string;
+          title: string | null;
+        };
         Insert: {
-          id?: string
-          user_id: string
-          recorded_at?: string
-          total_duration_sec?: number | null
-          avg_decibel?: number | null
-          max_decibel?: number | null
-          status?: string
-          selected_questions?: Array<{ question_id: number; order: number }> | null
-        }
+          id?: string;
+          user_id: string;
+          selected_questions: Json;
+          recorded_at?: string;
+          title?: string | null;
+        };
         Update: {
-          total_duration_sec?: number | null
-          avg_decibel?: number | null
-          max_decibel?: number | null
-          status?: string
-          selected_questions?: Array<{ question_id: number; order: number }> | null
-        }
-        Relationships: []
-      }
+          id?: string;
+          user_id?: string;
+          selected_questions?: Json;
+          recorded_at?: string;
+          title?: string | null;
+        };
+        Relationships: [];
+      };
       recordings: {
         Row: {
-          id: string
-          session_id: string
-          question_id: number
-          question_order: number
-          audio_url: string | null
-          duration_sec: number | null
-          max_decibel: number | null
-          avg_decibel: number | null
-          is_free_talk: boolean
-          stt_text: string | null
-          created_at: string
-        }
+          id: string;
+          session_id: string;
+          question_id: number;
+          question_text: string;
+          file_path: string;
+          duration_seconds: number | null;
+          created_at: string;
+        };
         Insert: {
-          id?: string
-          session_id: string
-          question_id: number
-          question_order: number
-          audio_url?: string | null
-          duration_sec?: number | null
-          max_decibel?: number | null
-          avg_decibel?: number | null
-          is_free_talk?: boolean
-          stt_text?: string | null
-        }
-        Update: {
-          audio_url?: string | null
-          duration_sec?: number | null
-          max_decibel?: number | null
-          avg_decibel?: number | null
-          stt_text?: string | null
-        }
-        Relationships: []
-      }
-    }
-    Views: Record<string, never>
-    Functions: Record<string, never>
-    Enums: Record<string, never>
-    CompositeTypes: Record<string, never>
-  }
-}
+          id?: string;
+          session_id: string;
+          question_id: number;
+          question_text: string;
+          file_path: string;
+          duration_seconds?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["voice_diary"]["Tables"]["recordings"]["Insert"]>;
+        Relationships: [];
+      };
+    };
+    Views: {};
+    Functions: {};
+  };
+};

@@ -1,137 +1,102 @@
-'use client'
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from "react";
 
-interface SpeechRecognitionResultItem {
-  transcript: string
-  confidence: number
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean
-  [index: number]: SpeechRecognitionResultItem
-}
-
-interface SpeechRecognitionResultList {
-  length: number
-  [index: number]: SpeechRecognitionResult
-}
-
-interface STTEvent {
-  resultIndex: number
-  results: SpeechRecognitionResultList
-}
-
-interface SpeechRecognitionInstance {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  onresult: ((e: STTEvent) => void) | null
-  onerror: ((e: { error: string }) => void) | null
-  onend: (() => void) | null
-  start: () => void
-  stop: () => void
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionInstance
-    webkitSpeechRecognition?: new () => SpeechRecognitionInstance
-  }
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
 }
 
 export function useSTT() {
-  const [transcript, setTranscript] = useState('')
-  const [interim, setInterim] = useState('')
-  const [listening, setListening] = useState(false)
-  const [error, setError] = useState('')
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
-  // true: 녹음 중 dropout 시 자동 재시작 허용 / false: 의도적 stop 이후 재시작 금지
-  const shouldRestartRef = useRef(false)
+  const [transcript, setTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const recognitionRef = useRef<any>(null);
+  const shouldRestartRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const SpeechRec = window.SpeechRecognition ?? window.webkitSpeechRecognition
+    const SR =
+      typeof window !== "undefined" &&
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-    if (!SpeechRec) {
-      setError('이 브라우저는 음성 인식을 지원하지 않습니다.')
-      return
+    // iOS Safari는 SpeechRecognition 마이크 스트림 충돌로 사실상 동작하지 않음 (8.2 참조).
+    // 명세상 "iOS STT 비활성화 + 안내 메시지" 로드맵을 즉시 반영하여 UI에서 자막 토글을 숨김.
+    if (!SR || isIOS()) {
+      setSupported(false);
+      return;
     }
 
-    const rec = new SpeechRec()
-    rec.lang = 'ko-KR'
-    rec.continuous = true
-    rec.interimResults = true
+    const recognition = new SR();
+    recognition.lang = "ko-KR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
 
-    rec.onresult = (e: STTEvent) => {
-      let finalText = ''
-      let interimText = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const result = e.results[i]
-        if (result.isFinal) {
-          finalText += result[0].transcript
-        } else {
-          interimText += result[0].transcript
+    recognition.onresult = (event: any) => {
+      let text = "";
+      for (let i = 0; i < event.results.length; i++) {
+        text += event.results[i][0].transcript;
+      }
+      setTranscript(text);
+    };
+
+    recognition.onerror = (e: any) => {
+      console.warn("[voice-diary] STT 오류:", e?.error);
+      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        setSupported(false);
+      }
+    };
+
+    recognition.onend = () => {
+      // PC Chrome은 일정 시간 후 자동 종료되므로, 사용자가 멈추지 않았다면 재시작
+      if (shouldRestartRef.current) {
+        try {
+          recognition.start();
+        } catch (err) {
+          console.warn("[voice-diary] STT 재시작 실패:", err);
         }
+      } else {
+        setIsListening(false);
       }
-      if (finalText) setTranscript((prev) => prev + finalText)
-      setInterim(interimText)
-    }
+    };
 
-    rec.onerror = (e: { error: string }) => {
-      if (e.error === 'not-allowed') {
-        setError('마이크 권한이 필요합니다. 브라우저 설정에서 마이크 접근을 허용해 주세요.')
-        shouldRestartRef.current = false
-      } else if (e.error === 'aborted') {
-        // stop() 호출로 인한 중단 — 재시작 불필요
-        shouldRestartRef.current = false
+    recognitionRef.current = recognition;
+
+    return () => {
+      shouldRestartRef.current = false;
+      try {
+        recognition.stop();
+      } catch {
+        // 무시
       }
-      // 'no-speech', 'network' 등은 shouldRestart 그대로 유지 → onend에서 재시작
-      setListening(false)
-    }
-
-    rec.onend = () => {
-      setListening(false)
-      setInterim('')
-      if (shouldRestartRef.current && recognitionRef.current) {
-        // 드롭아웃 복구: 300ms 후 재시작 (즉시 재시작 시 InvalidStateError 방지)
-        setTimeout(() => {
-          if (shouldRestartRef.current && recognitionRef.current) {
-            try {
-              recognitionRef.current.start()
-              setListening(true)
-            } catch {
-              // 이미 실행 중이거나 권한 없음 — 무시
-            }
-          }
-        }, 300)
-      }
-    }
-
-    recognitionRef.current = rec
-  }, [])
+    };
+  }, []);
 
   const start = useCallback(() => {
-    if (!recognitionRef.current) return
-    setTranscript('')
-    setInterim('')
-    setError('')
-    shouldRestartRef.current = true
-    recognitionRef.current.start()
-    setListening(true)
-  }, [])
+    if (!supported || !recognitionRef.current) return;
+    setTranscript("");
+    shouldRestartRef.current = true;
+    try {
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch (err) {
+      console.warn("[voice-diary] STT 시작 실패:", err);
+    }
+  }, [supported]);
 
   const stop = useCallback(() => {
-    shouldRestartRef.current = false  // 의도적 중단 — onend에서 재시작 금지
-    recognitionRef.current?.stop()
-    setListening(false)
-    setInterim('')
-  }, [])
+    shouldRestartRef.current = false;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // 무시
+      }
+    }
+    setIsListening(false);
+  }, []);
 
-  const reset = useCallback(() => {
-    setTranscript('')
-    setInterim('')
-  }, [])
-
-  return { transcript, interim, listening, error, start, stop, reset }
+  return { transcript, isListening, supported, start, stop };
 }
