@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { getOrCreateProfile } from "@/lib/profile";
 import { redirect } from "next/navigation";
-import { formatDateTimeKo } from "@/lib/dateUtils";
+import LocalTime from "@/components/LocalTime";
 import { getQuestionById } from "@/lib/questions";
 import SessionPlayer from "./SessionPlayer";
 
@@ -55,7 +55,9 @@ export default async function SessionDetailPage({ params }: { params: { id: stri
   return (
     <div className="flex-1 flex flex-col">
       <div className="px-5 pt-6 pb-2">
-        <h1 className="text-lg font-bold text-stone-800">{formatDateTimeKo(session.recorded_at)}</h1>
+        <h1 className="text-lg font-bold text-stone-800">
+          <LocalTime iso={session.recorded_at} />
+        </h1>
         <p className="text-xs text-stone-400 mt-1">{withUrls.length}개 문항</p>
       </div>
       <SessionPlayer items={withUrls} />

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { getOrCreateProfile } from "@/lib/profile";
 import Link from "next/link";
-import { formatDateTimeKo } from "@/lib/dateUtils";
+import LocalTime from "@/components/LocalTime";
 import FreeTalkPanel from "./FreeTalkPanel";
 
 export default async function RecordsPage({
@@ -61,7 +61,9 @@ export default async function RecordsPage({
               return (
                 <Link key={s.id} href={`/records/${s.id}`} className="card flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-stone-800">{formatDateTimeKo(s.recorded_at)}</p>
+                    <p className="font-semibold text-stone-800">
+                      <LocalTime iso={s.recorded_at} />
+                    </p>
                     <p className="text-xs text-stone-400 mt-1">{qCount}개 문항 녹음</p>
                   </div>
                   <span className="text-stone-300">›</span>

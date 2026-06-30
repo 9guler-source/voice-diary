@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { getOrCreateProfile } from "@/lib/profile";
 import Link from "next/link";
+import LocalTime from "@/components/LocalTime";
 
 export default async function HomePage() {
   const supabase = createClient();
@@ -44,7 +45,7 @@ export default async function HomePage() {
         <p className="text-3xl font-bold mt-1">{sessionCount}개의 세션</p>
         {lastRecordedAt && (
           <p className="text-xs opacity-80 mt-2">
-            마지막 기록: {new Date(lastRecordedAt).toLocaleDateString("ko-KR")}
+            마지막 기록: <LocalTime iso={lastRecordedAt} showTime={false} />
           </p>
         )}
       </div>

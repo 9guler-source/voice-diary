@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-import { formatDateTimeKo } from "@/lib/dateUtils";
+import LocalTime from "@/components/LocalTime";
 
 const BUCKET = "voice-diary";
 
@@ -33,7 +33,9 @@ export default async function FreeTalkPanel({ profileId }: { profileId: string }
     <div className="space-y-3">
       {withUrls.map((r) => (
         <div key={r.recording_id} className="card">
-          <p className="text-xs text-stone-400 mb-2">{formatDateTimeKo(r.recorded_at)}</p>
+          <p className="text-xs text-stone-400 mb-2">
+            <LocalTime iso={r.recorded_at} />
+          </p>
           {r.url ? (
             <audio src={r.url} controls className="w-full" />
           ) : (
