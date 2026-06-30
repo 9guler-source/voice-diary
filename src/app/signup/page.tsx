@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { registerGuardianAfterSignup } from "./actions";
+import EmailConfirmModal from "@/components/EmailConfirmModal";
 
 function getStrength(pw: string): { score: number; label: string; color: string } {
   let score = 0;
@@ -12,7 +13,6 @@ function getStrength(pw: string): { score: number; label: string; color: string 
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
   if (/[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
-
   if (score <= 1) return { score, label: "약함", color: "bg-red-500" };
   if (score <= 3) return { score, label: "보통", color: "bg-amber-500" };
   return { score, label: "강함", color: "bg-green-600" };
@@ -29,24 +29,26 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmPopup, setConfirmPopup] = useState(false);
+  // 이메일 확인 모달 상태
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const strength = useMemo(() => getStrength(password), [password]);
   const mismatch = password2.length > 0 && password !== password2;
 
-  async function handleSignup(e: React.FormEvent) {
+  // 폼 제출 → 먼저 이메일 확인 모달 표시
+  function handleSubmitClick(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password.length < 8) { setError("비밀번호는 8자 이상이어야 합니다."); return; }
+    if (password !== password2) { setError("비밀번호가 일치하지 않습니다."); return; }
+    setShowEmailModal(true); // 이메일 확인 모달 열기
+  }
 
-    if (password.length < 8) {
-      setError("비밀번호는 8자 이상이어야 합니다.");
-      return;
-    }
-    if (password !== password2) {
-      setError("비밀번호가 일치하지 않습니다.");
-      return;
-    }
-
+  // 이메일 확인 모달 → "맞습니다" 클릭 → 실제 가입 진행
+  async function handleEmailConfirmed() {
+    setShowEmailModal(false);
     setLoading(true);
+
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -63,7 +65,6 @@ export default function SignupPage() {
       return;
     }
 
-    // 이메일 인증이 켜져 있지 않은 개발 환경에서는 세션이 즉시 생성됨 → 보호자 정보 바로 저장
     if (data.session && guardianEmail) {
       await registerGuardianAfterSignup(guardianEmail, guardianName);
     }
@@ -97,7 +98,7 @@ export default function SignupPage() {
     <div className="flex-1 flex flex-col justify-center px-6 py-10">
       <h1 className="text-xl font-bold text-stone-800 mb-6 text-center">회원가입</h1>
 
-      <form onSubmit={handleSignup} className="space-y-4">
+      <form onSubmit={handleSubmitClick} className="space-y-4">
         <input
           type="text"
           placeholder="이름 (선택)"
@@ -127,10 +128,7 @@ export default function SignupPage() {
           {password.length > 0 && (
             <div className="mt-2">
               <div className="h-1.5 w-full bg-stone-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full ${strength.color} transition-all`}
-                  style={{ width: `${(strength.score / 5) * 100}%` }}
-                />
+                <div className={`h-full ${strength.color} transition-all`} style={{ width: `${(strength.score / 5) * 100}%` }} />
               </div>
               <p className="text-xs text-stone-500 mt-1">비밀번호 강도: {strength.label}</p>
             </div>
@@ -151,23 +149,9 @@ export default function SignupPage() {
 
         <div className="card !p-4 space-y-3">
           <p className="text-sm font-semibold text-stone-700">보호자 등록 (선택)</p>
-          <p className="text-xs text-stone-500">
-            등록하시면 가족이 회원님의 기록에 접근할 수 있습니다. 나중에 설정에서도 추가할 수 있어요.
-          </p>
-          <input
-            type="email"
-            placeholder="보호자 이메일"
-            value={guardianEmail}
-            onChange={(e) => setGuardianEmail(e.target.value)}
-            className="input-field"
-          />
-          <input
-            type="text"
-            placeholder="보호자 이름 (선택)"
-            value={guardianName}
-            onChange={(e) => setGuardianName(e.target.value)}
-            className="input-field"
-          />
+          <p className="text-xs text-stone-500">나중에 설정에서도 추가할 수 있어요.</p>
+          <input type="email" placeholder="보호자 이메일" value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} className="input-field" />
+          <input type="text" placeholder="보호자 이름 (선택)" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} className="input-field" />
         </div>
 
         {error && <p className="text-red-600 text-sm text-center">{error}</p>}
@@ -179,10 +163,21 @@ export default function SignupPage() {
 
       <div className="mt-8 text-center text-sm text-stone-500">
         이미 계정이 있으신가요?{" "}
-        <Link href="/login" className="text-brand-600 font-semibold">
-          로그인
-        </Link>
+        <Link href="/login" className="text-brand-600 font-semibold">로그인</Link>
       </div>
+
+      {/* 이메일 확인 1차 모달 */}
+      {showEmailModal && (
+        <EmailConfirmModal
+          email={email}
+          title="이메일을 확인해주세요"
+          message="아래 이메일 주소로 가입을 진행합니다. 정확한지 확인해 주세요."
+          confirmLabel="맞습니다, 가입 진행"
+          cancelLabel="수정하겠습니다"
+          onConfirm={handleEmailConfirmed}
+          onCancel={() => setShowEmailModal(false)}
+        />
+      )}
     </div>
   );
 }
