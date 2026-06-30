@@ -14,7 +14,6 @@ import Toggle from '@/components/ui/Toggle'
 import { QUESTIONS, FINAL_QUESTION } from '@/lib/questions'
 import type { Question } from '@/lib/questions'
 import { createSession, saveRecording, completeSession } from './actions'
-import { initChime } from '@/lib/chime'
 
 const FREE_TALK_LIMIT = 180
 const ALL_QUESTIONS = [...QUESTIONS, FINAL_QUESTION]
@@ -128,12 +127,11 @@ export default function SessionPage() {
   const isFreeTalk = currentQ?.id === FINAL_QUESTION.id
   const total = questions.length
 
-  // TTS: 문항 변경 시 이전 TTS 취소 → 새 문항 읽기
-  // speak() 내부에서 cancel() 후 500ms 대기 보장
+  // TTS: 문항 변경 시 이전 TTS 취소 → 새 문항 읽기 (ttsText 전환 문구가 잔여음 마스킹)
   useEffect(() => {
     if (!currentQ || !ttsEnabled || recording) return
     stopTTS()
-    void speak(currentQ.content)
+    void speak(currentQ.ttsText ?? currentQ.content)
     return () => { stopTTS() }
   }, [currentIdx, currentQ, ttsEnabled, recording, speak, stopTTS])
 
@@ -229,7 +227,6 @@ export default function SessionPage() {
   }, [recording, isFreeTalk])
 
   const handleStart = async () => {
-    initChime()  // 사용자 제스처로 AudioContext 활성화
     stopTTS()
     if (starterTTSEnabled && currentQ?.starter) {
       starterAbortRef.current = false
