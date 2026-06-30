@@ -85,8 +85,11 @@ export default function SessionRecorder({ userId }: { userId: string }) {
 
   async function handleStartRecording() {
     cancelTTS();
-    await recording.startRecording();
-    if (captionsOn && stt.supported) stt.start();
+    const ok = await recording.startRecording();
+    if (ok) {
+      setPhase("recording");
+      if (captionsOn && stt.supported) stt.start();
+    }
   }
 
   function handleStopRecording() {

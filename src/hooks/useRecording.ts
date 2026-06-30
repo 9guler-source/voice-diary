@@ -80,7 +80,7 @@ export function useRecording() {
     tick();
   }, []);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (): Promise<boolean> => {
     setError(null);
     setAudioBlob(null);
     setAudioUrl(null);
@@ -163,6 +163,7 @@ export function useRecording() {
       recorder.start(1000);
       startTimeRef.current = Date.now();
       setState("recording");
+      return true;
     } catch (err: any) {
       console.error("[voice-diary] getUserMedia/MediaRecorder 생성 실패:", err);
       let msg = "마이크에 접근할 수 없습니다. 설정에서 마이크 권한을 확인해주세요.";
@@ -174,6 +175,7 @@ export function useRecording() {
       setError(msg);
       setState("error");
       cleanupStream();
+      return false;
     }
   }, [cleanupStream, visualize]);
 
