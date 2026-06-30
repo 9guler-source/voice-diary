@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import { addGuardian, deleteGuardian } from "./actions";
 
-type Guardian = { id: string; guardian_email: string; guardian_name: string | null };
+type Guardian = { id: string; email: string; name: string; relation: string | null };
 
 export default function GuardianManager({ initialGuardians }: { initialGuardians: Guardian[] }) {
   const [guardians, setGuardians] = useState(initialGuardians);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [relation, setRelation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -18,6 +19,7 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
     const fd = new FormData();
     fd.set("guardianEmail", email);
     fd.set("guardianName", name);
+    fd.set("guardianRelation", relation);
 
     startTransition(async () => {
       const result = await addGuardian(fd);
@@ -25,9 +27,13 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
         setError(result.error);
         return;
       }
-      setGuardians((prev) => [{ id: crypto.randomUUID(), guardian_email: email, guardian_name: name || null }, ...prev]);
+      setGuardians((prev) => [
+        { id: crypto.randomUUID(), email, name, relation: relation || null },
+        ...prev,
+      ]);
       setEmail("");
       setName("");
+      setRelation("");
     });
   }
 
@@ -49,8 +55,10 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
           {guardians.map((g) => (
             <li key={g.id} className="flex items-center justify-between bg-stone-50 rounded-xl px-3 py-2">
               <div>
-                <p className="text-sm text-stone-700">{g.guardian_email}</p>
-                {g.guardian_name && <p className="text-xs text-stone-400">{g.guardian_name}</p>}
+                <p className="text-sm text-stone-700">
+                  {g.name} {g.relation && <span className="text-stone-400">· {g.relation}</span>}
+                </p>
+                <p className="text-xs text-stone-400">{g.email}</p>
               </div>
               <button onClick={() => handleDelete(g.id)} className="text-xs text-red-500">
                 삭제
@@ -62,6 +70,14 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
 
       <form onSubmit={handleAdd} className="space-y-2 pt-2 border-t border-stone-100">
         <input
+          type="text"
+          required
+          placeholder="보호자 이름"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="input-field !py-2 text-sm"
+        />
+        <input
           type="email"
           required
           placeholder="보호자 이메일"
@@ -71,9 +87,9 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
         />
         <input
           type="text"
-          placeholder="보호자 이름 (선택)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          placeholder="관계 (예: 딸, 아들) - 선택"
+          value={relation}
+          onChange={(e) => setRelation(e.target.value)}
           className="input-field !py-2 text-sm"
         />
         {error && <p className="text-xs text-red-500">{error}</p>}

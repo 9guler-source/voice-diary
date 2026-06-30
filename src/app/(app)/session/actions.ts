@@ -1,12 +1,14 @@
 "use server";
 
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 import { revalidatePath } from "next/cache";
 
 export type RecordingMeta = {
   questionId: number;
-  questionText: string;
-  filePath: string;
+  questionOrder: number;
+  isFreeTalk: boolean;
+  audioPath: string; // Storage 상의 파일 경로 (private 버킷, 재생 시 signed URL 생성)
   durationSeconds: number;
 };
 
@@ -22,12 +24,23 @@ export async function saveSession(
   if (!user) return { error: "로그인이 필요합니다." };
   if (recordings.length === 0) return { error: "저장할 녹음이 없습니다." };
 
+  let profile;
+  try {
+    profile = await getOrCreateProfile(supabase, user);
+  } catch {
+    return { error: "프로필 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요." };
+  }
+
+  const totalDuration = recordings.reduce((sum, r) => sum + (r.durationSeconds || 0), 0);
+
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
     .insert({
-      user_id: user.id,
+      user_id: profile.id,
       selected_questions: selectedQuestionIds,
       recorded_at: new Date().toISOString(),
+      status: "completed",
+      total_duration_sec: totalDuration,
     } as never)
     .select("id")
     .single();
@@ -42,9 +55,10 @@ export async function saveSession(
   const rows = recordings.map((r) => ({
     session_id: session.id,
     question_id: r.questionId,
-    question_text: r.questionText,
-    file_path: r.filePath,
-    duration_seconds: r.durationSeconds,
+    question_order: r.questionOrder,
+    is_free_talk: r.isFreeTalk,
+    audio_url: r.audioPath,
+    duration_sec: r.durationSeconds,
   }));
 
   const { error: recError } = await supabase.from("recordings").insert(rows as never);

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 import Link from "next/link";
 import { formatDateTimeKo } from "@/lib/dateUtils";
 import FreeTalkPanel from "./FreeTalkPanel";
@@ -18,10 +19,12 @@ export default async function RecordsPage({
     return <p className="p-6 text-stone-400">로그인이 필요합니다.</p>;
   }
 
+  const profile = await getOrCreateProfile(supabase, user);
+
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id, recorded_at, title, selected_questions")
-    .eq("user_id", user.id)
+    .select("id, recorded_at, selected_questions, total_duration_sec")
+    .eq("user_id", profile.id)
     .order("recorded_at", { ascending: false });
 
   return (
@@ -58,9 +61,7 @@ export default async function RecordsPage({
               return (
                 <Link key={s.id} href={`/records/${s.id}`} className="card flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-stone-800">
-                      {s.title || formatDateTimeKo(s.recorded_at)}
-                    </p>
+                    <p className="font-semibold text-stone-800">{formatDateTimeKo(s.recorded_at)}</p>
                     <p className="text-xs text-stone-400 mt-1">{qCount}개 문항 녹음</p>
                   </div>
                   <span className="text-stone-300">›</span>
@@ -69,7 +70,7 @@ export default async function RecordsPage({
             })
           )
         ) : (
-          <FreeTalkPanel userId={user.id} />
+          <FreeTalkPanel profileId={profile.id} />
         )}
       </div>
     </div>

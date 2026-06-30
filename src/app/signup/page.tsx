@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
+import { registerGuardianAfterSignup } from "./actions";
 
 function getStrength(pw: string): { score: number; label: string; color: string } {
   let score = 0;
@@ -64,11 +65,7 @@ export default function SignupPage() {
 
     // 이메일 인증이 켜져 있지 않은 개발 환경에서는 세션이 즉시 생성됨 → 보호자 정보 바로 저장
     if (data.session && guardianEmail) {
-      await supabase.from("guardians").insert({
-        user_id: data.session.user.id,
-        guardian_email: guardianEmail,
-        guardian_name: guardianName || null,
-      } as never);
+      await registerGuardianAfterSignup(guardianEmail, guardianName);
     }
 
     setLoading(false);

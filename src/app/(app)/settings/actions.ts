@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 import { revalidatePath } from "next/cache";
 
 export async function addGuardian(formData: FormData) {
@@ -10,15 +11,20 @@ export async function addGuardian(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "로그인이 필요합니다." };
 
-  const guardianEmail = String(formData.get("guardianEmail") || "").trim();
-  const guardianName = String(formData.get("guardianName") || "").trim();
+  const profile = await getOrCreateProfile(supabase, user);
 
-  if (!guardianEmail) return { error: "보호자 이메일을 입력해주세요." };
+  const email = String(formData.get("guardianEmail") || "").trim();
+  const name = String(formData.get("guardianName") || "").trim();
+  const relation = String(formData.get("guardianRelation") || "").trim();
+
+  if (!email) return { error: "보호자 이메일을 입력해주세요." };
+  if (!name) return { error: "보호자 이름을 입력해주세요." };
 
   const { error } = await supabase.from("guardians").insert({
-    user_id: user.id,
-    guardian_email: guardianEmail,
-    guardian_name: guardianName || null,
+    user_id: profile.id,
+    name,
+    email,
+    relation: relation || null,
   } as never);
 
   if (error) {
@@ -37,7 +43,14 @@ export async function deleteGuardian(guardianId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "로그인이 필요합니다." };
 
-  const { error } = await supabase.from("guardians").delete().eq("id", guardianId).eq("user_id", user.id);
+  const profile = await getOrCreateProfile(supabase, user);
+
+  const { error } = await supabase
+    .from("guardians")
+    .delete()
+    .eq("id", guardianId)
+    .eq("user_id", profile.id);
+
   if (error) {
     console.error("[voice-diary] 보호자 삭제 실패:", error);
     return { error: "삭제에 실패했습니다." };

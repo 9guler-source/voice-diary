@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 import Link from "next/link";
 
 export default async function HomePage() {
@@ -12,23 +13,19 @@ export default async function HomePage() {
   let lastRecordedAt: string | null = null;
 
   if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    displayName = profile?.display_name || (user.email?.split("@")[0] ?? "");
+    const profile = await getOrCreateProfile(supabase, user);
+    displayName = profile.name;
 
     const { count } = await supabase
       .from("sessions")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id);
+      .eq("user_id", profile.id);
     sessionCount = count ?? 0;
 
     const { data: lastSession } = await supabase
       .from("sessions")
       .select("recorded_at")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .order("recorded_at", { ascending: false })
       .limit(1)
       .maybeSingle();

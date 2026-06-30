@@ -127,8 +127,9 @@ export default function SessionRecorder({ userId }: { userId: string }) {
 
     const meta: RecordingMeta = {
       questionId: current.id,
-      questionText: current.questionText,
-      filePath: path,
+      questionOrder: index,
+      isFreeTalk: current.isFreeTalk,
+      audioPath: path,
       durationSeconds: recording.durationSeconds,
     };
     const updated = [...finishedRecordings, meta];

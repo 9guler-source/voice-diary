@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 import { redirect } from "next/navigation";
 import GuardianManager from "./GuardianManager";
 import PasswordChangeForm from "./PasswordChangeForm";
@@ -12,10 +13,12 @@ export default async function SettingsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const profile = await getOrCreateProfile(supabase, user);
+
   const { data: guardians } = await supabase
     .from("guardians")
-    .select("id, guardian_email, guardian_name")
-    .eq("user_id", user.id)
+    .select("id, email, name, relation")
+    .eq("user_id", profile.id)
     .order("created_at", { ascending: false });
 
   return (
@@ -25,6 +28,7 @@ export default async function SettingsPage() {
       <section className="card space-y-3">
         <h2 className="font-semibold text-stone-700">계정</h2>
         <p className="text-sm text-stone-500">{user.email}</p>
+        <p className="text-xs text-stone-400">{profile.name}님</p>
       </section>
 
       <section className="card space-y-3">

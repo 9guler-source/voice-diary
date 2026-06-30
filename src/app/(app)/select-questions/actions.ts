@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase-server";
+import { getOrCreateProfile } from "@/lib/profile";
 
 export async function getLastSelectedQuestionIds(): Promise<number[]> {
   const supabase = createClient();
@@ -9,10 +10,12 @@ export async function getLastSelectedQuestionIds(): Promise<number[]> {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
+  const profile = await getOrCreateProfile(supabase, user);
+
   const { data, error } = await supabase
     .from("sessions")
     .select("selected_questions")
-    .eq("user_id", user.id)
+    .eq("user_id", profile.id)
     .order("recorded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
