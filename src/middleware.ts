@@ -1,31 +1,22 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// 로그인 없이 접근 가능한 경로
-const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/guardian-login"];
+// Edge 런타임 제약으로 외부 파일 import 대신 인라인 정의
+function isGuardianEmail(email: string): boolean {
+  return email.endsWith("@voice.app");
+}
 
-// 보호자 전용 경로 — 별도 세션 방식 (guardian-session.ts)으로 각 페이지에서 처리
-// 미들웨어에서는 Supabase 인증 검사를 건너뛰어 /login으로 잘못 리다이렉트되지 않게 함
-const GUARDIAN_PATHS = ["/guardian"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/guardian-login"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
-
-  const path = request.nextUrl.pathname;
-
-  // 보호자 전용 경로: 각 페이지 서버 컴포넌트에서 직접 세션 검증
-  if (GUARDIAN_PATHS.some((p) => path.startsWith(p))) {
-    return response;
-  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
+        get(name: string) { return request.cookies.get(name)?.value; },
         set(name: string, value: string, options: CookieOptions) {
           response.cookies.set({ name, value, ...options });
         },
@@ -36,19 +27,45 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
+  const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p)) || path === "/";
+  const userIsGuardian = user ? isGuardianEmail(user.email ?? "") : false;
+
+  // ── 보호자 전용 경로 (/guardian/*) ──────────────────────────────
+  if (path.startsWith("/guardian") && !path.startsWith("/guardian-login")) {
+    if (!user) {
+      // 미로그인 → 보호자 로그인 페이지로
+      const url = request.nextUrl.clone();
+      url.pathname = "/guardian-login";
+      return NextResponse.redirect(url);
+    }
+    if (!userIsGuardian) {
+      // 일반 사용자가 보호자 경로 접근 → 홈으로
+      const url = request.nextUrl.clone();
+      url.pathname = "/home";
+      return NextResponse.redirect(url);
+    }
+    return response; // 보호자 계정 → 통과 (layout에서 DB 재검증)
+  }
+
+  // ── 일반 경로 ────────────────────────────────────────────────────
+  if (userIsGuardian) {
+    // 보호자 계정이 일반 경로 접근 → 보호자 열람 화면으로
+    const url = request.nextUrl.clone();
+    url.pathname = "/guardian/records";
+    return NextResponse.redirect(url);
+  }
 
   if (!user && !isPublic) {
+    // 미로그인 일반 사용자 → 로그인 페이지로
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && (path === "/login" || path === "/signup")) {
+  if (user && !userIsGuardian && (path === "/login" || path === "/signup")) {
+    // 로그인된 일반 사용자가 로그인/가입 페이지 접근 → 홈으로
     const url = request.nextUrl.clone();
     url.pathname = "/home";
     return NextResponse.redirect(url);

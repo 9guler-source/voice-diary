@@ -1,10 +1,10 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { verifyGuardianToken } from "@/lib/guardian-session";
+import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { redirect } from "next/navigation";
+import { isGuardianEmail } from "@/lib/guardian-email";
 import { getQuestionById } from "@/lib/questions";
 import LocalTime from "@/components/LocalTime";
-import SessionPlayer from "@/app/(app)/records/[id]/SessionPlayer";
+import SessionPlayer from "@/components/SessionPlayer";
 
 const BUCKET = "voice-diary";
 
@@ -13,19 +13,28 @@ export default async function GuardianSessionDetailPage({
 }: {
   params: { id: string };
 }) {
-  const cookieStore = cookies();
-  const token = cookieStore.get("vd_guardian_session")?.value;
-  const payload = token ? verifyGuardianToken(token) : null;
-  if (!payload) redirect("/guardian-login");
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const admin = createAdminClient();
+  if (!user || !isGuardianEmail(user.email ?? "")) {
+    redirect("/guardian-login");
+  }
 
-  // 세션이 열람 권한이 있는 사용자 소유인지 확인
-  const { data: session } = await admin
+  // 보호자 행 조회
+  const { data: guardian } = await supabase
+    .from("guardians")
+    .select("user_id")
+    .eq("guardian_auth_id", user.id)
+    .maybeSingle();
+
+  if (!guardian) redirect("/guardian-login");
+
+  // 세션 조회 — RLS(sessions_guardian_read)가 담당 사용자 소유 세션만 허용
+  const { data: session } = await supabase
     .from("sessions")
     .select("id, recorded_at, user_id")
     .eq("id", params.id)
-    .eq("user_id", payload.uid) // 반드시 본인 소유 세션만
+    .eq("user_id", guardian.user_id) // 명시적으로도 필터 (이중 보호)
     .maybeSingle();
 
   if (!session) {
@@ -36,13 +45,16 @@ export default async function GuardianSessionDetailPage({
     );
   }
 
-  const { data: recordings } = await admin
+  // recordings 조회 — RLS(recordings_guardian_read) 자동 적용
+  const { data: recordings } = await supabase
     .from("recordings")
     .select("id, question_id, question_order, audio_url, duration_sec")
     .eq("session_id", session.id)
     .order("question_order", { ascending: true });
 
-  // signed URL 생성 (1시간 유효)
+  // signed URL 생성 — Storage RLS가 guardian을 허용하지 않아 admin 클라이언트 사용
+  // (단, 이미 위에서 RLS로 해당 세션 접근 권한 검증 완료됨)
+  const admin = createAdminClient();
   const withUrls = await Promise.all(
     (recordings ?? []).map(async (r) => {
       const q = getQuestionById(r.question_id);
