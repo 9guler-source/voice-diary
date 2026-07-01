@@ -1,12 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useTransition } from "react";
 import { addGuardian, deleteGuardian } from "./actions";
 import EmailConfirmModal from "@/components/EmailConfirmModal";
 
 type Guardian = { id: string; email: string; name: string; relation: string | null };
-
-// 이중 확인 상태: idle → first(1차 팝업) → second(2차 팝업) → submitting
 type ConfirmStep = "idle" | "first" | "second";
 
 export default function GuardianManager({ initialGuardians }: { initialGuardians: Guardian[] }) {
@@ -19,60 +17,43 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
   const [confirmStep, setConfirmStep] = useState<ConfirmStep>("idle");
   const [isPending, startTransition] = useTransition();
 
-  // "보호자 추가" 버튼 클릭 → 유효성 검사 후 1차 팝업
   function handleAddClick(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setWarning(null);
     if (!email.trim()) { setError("보호자 이메일을 입력해주세요."); return; }
     if (!name.trim()) { setError("보호자 이름을 입력해주세요."); return; }
-    setConfirmStep("first"); // 1차 팝업 열기
+    setConfirmStep("first");
   }
 
-  // 1차 팝업 확인 → 2차 팝업
   function handleFirstConfirm() {
     setConfirmStep("second");
   }
 
-  // 2차 팝업 확인 → 실제 등록 실행
   function handleSecondConfirm() {
     setConfirmStep("idle");
     const fd = new FormData();
     fd.set("guardianEmail", email);
     fd.set("guardianName", name);
     fd.set("guardianRelation", relation);
-
     startTransition(async () => {
       const result = await addGuardian(fd);
-      if (result?.error) {
-        setError(result.error);
-        return;
-      }
-      if ((result as any)?.warning) {
-        setWarning((result as any).warning);
-      }
-      setGuardians((prev) => [
-        { id: crypto.randomUUID(), email, name, relation: relation || null },
-        ...prev,
-      ]);
-      setEmail("");
-      setName("");
-      setRelation("");
+      if (result?.error) { setError(result.error); return; }
+      if ((result as any)?.warning) setWarning((result as any).warning);
+      setGuardians((prev) => [{ id: crypto.randomUUID(), email, name, relation: relation || null }, ...prev]);
+      setEmail(""); setName(""); setRelation("");
     });
   }
 
   function handleDelete(id: string) {
     startTransition(async () => {
       const result = await deleteGuardian(id);
-      if (!result?.error) {
-        setGuardians((prev) => prev.filter((g) => g.id !== id));
-      }
+      if (!result?.error) setGuardians((prev) => prev.filter((g) => g.id !== id));
     });
   }
 
   return (
     <div className="space-y-3">
-      {/* 등록된 보호자 목록 */}
       {guardians.length === 0 ? (
         <p className="text-sm text-stone-400">등록된 보호자가 없습니다.</p>
       ) : (
@@ -80,58 +61,25 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
           {guardians.map((g) => (
             <li key={g.id} className="flex items-center justify-between bg-stone-50 rounded-xl px-3 py-2">
               <div>
-                <p className="text-sm text-stone-700">
-                  {g.name}{g.relation && <span className="text-stone-400"> · {g.relation}</span>}
-                </p>
+                <p className="text-sm text-stone-700">{g.name}{g.relation && <span className="text-stone-400"> · {g.relation}</span>}</p>
                 <p className="text-xs text-stone-400">{g.email}</p>
               </div>
-              <button onClick={() => handleDelete(g.id)} className="text-xs text-red-500 ml-2 shrink-0">
-                삭제
-              </button>
+              <button onClick={() => handleDelete(g.id)} className="text-xs text-red-500 ml-2 shrink-0">삭제</button>
             </li>
           ))}
         </ul>
       )}
-
-      {/* 경고 메시지 (등록 성공 but 메일 실패) */}
-      {warning && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2">
-          <p className="text-xs text-amber-700">{warning}</p>
-        </div>
-      )}
-
-      {/* 보호자 추가 폼 */}
+      {warning && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2"><p className="text-xs text-amber-700">{warning}</p></div>}
       <form onSubmit={handleAddClick} className="space-y-2 pt-2 border-t border-stone-100">
-        <input
-          type="text"
-          required
-          placeholder="보호자 이름"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="input-field !py-2 text-sm"
-        />
-        <input
-          type="email"
-          required
-          placeholder="보호자 이메일"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="input-field !py-2 text-sm"
-        />
-        <input
-          type="text"
-          placeholder="관계 (예: 딸, 아들) — 선택"
-          value={relation}
-          onChange={(e) => setRelation(e.target.value)}
-          className="input-field !py-2 text-sm"
-        />
+        <input type="text" required placeholder="보호자 이름" value={name} onChange={(e) => setName(e.target.value)} className="input-field !py-2 text-sm" />
+        <input type="email" required placeholder="보호자 이메일" value={email} onChange={(e) => setEmail(e.target.value)} className="input-field !py-2 text-sm" />
+        <input type="text" placeholder="관계 (예: 딸, 아들) — 선택" value={relation} onChange={(e) => setRelation(e.target.value)} className="input-field !py-2 text-sm" />
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button type="submit" disabled={isPending} className="btn-secondary !py-2 text-sm">
           {isPending ? "등록 중..." : "+ 보호자 추가"}
         </button>
       </form>
 
-      {/* ── 1차 확인 팝업 ── */}
       {confirmStep === "first" && (
         <EmailConfirmModal
           email={email}
@@ -144,7 +92,6 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
         />
       )}
 
-      {/* ── 2차 확인 팝업 ── */}
       {confirmStep === "second" && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-6">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
@@ -154,26 +101,11 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
               <p className="text-xs text-brand-500 mt-1">{name}{relation ? ` · ${relation}` : ""}</p>
             </div>
             <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
-              <p className="text-xs text-amber-700">
-                등록 즉시 보호자에게 <strong>로그인 안내 메일이 자동 발송</strong>됩니다.
-                보호자는 해당 메일에 안내된 비밀번호로 회원님의 녹음을 열람할 수 있습니다.
-              </p>
+              <p className="text-xs text-amber-700">등록 즉시 보호자에게 <strong>로그인 안내 메일이 자동 발송</strong>됩니다.</p>
             </div>
             <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmStep("idle")}
-                className="flex-1 rounded-xl border border-stone-300 py-3 text-sm font-semibold text-stone-700"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleSecondConfirm}
-                className="flex-1 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white"
-              >
-                등록하겠습니다
-              </button>
+              <button type="button" onClick={() => setConfirmStep("idle")} className="flex-1 rounded-xl border border-stone-300 py-3 text-sm font-semibold text-stone-700">취소</button>
+              <button type="button" onClick={handleSecondConfirm} className="flex-1 rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">등록하겠습니다</button>
             </div>
           </div>
         </div>
