@@ -134,7 +134,7 @@ export default function GuardianManager({ initialGuardians }: { initialGuardians
           title="보호자 정보를 확인해주세요"
           message="아래 정보로 보호자를 등록합니다. 모두 정확한지 확인해주세요."
           items={confirmItems}
-          warning="비밀번호(4자리)를 꼭 기억하시거나 별도 비밀 유지되는 곳에 메모하세요!"
+          warning="비밀번호(4자리)를 꼭 기억하시거나 별도 비밀 유지되는 곳에 메모하세요! 비밀번호를 잊어버리는 경우에 절대 재설정 안되니 유의하시기 바랍니다."
           confirmLabel="맞습니다, 등록하겠습니다"
           cancelLabel="수정하겠습니다"
           onConfirm={handleConfirmed}

@@ -174,6 +174,7 @@ export default function SignupPage() {
           title="입력하신 정보를 확인해주세요"
           message="이메일과 생년월일이 정확한지 확인해주세요."
           items={confirmItems}
+          warning="비밀번호를 잊어버리는 경우에 절대 재설정 안되니 유의하시기 바랍니다."
           confirmLabel="맞습니다, 가입하기"
           cancelLabel="수정하겠습니다"
           onConfirm={handleConfirmed}
