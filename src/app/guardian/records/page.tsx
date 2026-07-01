@@ -1,31 +1,23 @@
-import { createClient } from "@/lib/supabase-server";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { verifyGuardianToken } from "@/lib/guardian-session";
+import { createAdminClient } from "@/lib/supabase-admin";
 import LocalTime from "@/components/LocalTime";
-import { isGuardianEmail } from "@/lib/guardian-email";
 
 export default async function GuardianRecordsPage() {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const cookieStore = cookies();
+  const token = cookieStore.get("vd_guardian_session")?.value;
+  const payload = token ? verifyGuardianToken(token) : null;
+  if (!payload) redirect("/guardian-login");
 
-  if (!user || !isGuardianEmail(user.email ?? "")) {
-    redirect("/guardian-login");
-  }
+  const admin = createAdminClient();
 
-  // 보호자 행 조회 (RLS: guardian_auth_id = auth.uid())
-  const { data: guardian } = await supabase
-    .from("guardians")
-    .select("user_id")
-    .eq("guardian_auth_id", user.id)
-    .maybeSingle();
-
-  if (!guardian) redirect("/guardian-login");
-
-  // 세션 조회 (RLS: sessions_guardian_read 정책 자동 적용 — Admin 클라이언트 불필요)
-  const { data: sessions } = await supabase
+  const { data: sessions } = await admin
     .from("sessions")
     .select("id, recorded_at, selected_questions, total_duration_sec")
-    .eq("user_id", guardian.user_id)
+    .eq("user_id", payload.uid)
+    .eq("status", "completed")
     .order("recorded_at", { ascending: false });
 
   return (
@@ -44,7 +36,8 @@ export default async function GuardianRecordsPage() {
         <div className="space-y-3">
           {sessions.map((s) => {
             const qCount = Array.isArray(s.selected_questions)
-              ? s.selected_questions.length : 0;
+              ? s.selected_questions.length
+              : 0;
             return (
               <Link
                 key={s.id}
