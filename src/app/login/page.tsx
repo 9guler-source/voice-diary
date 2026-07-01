@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resetSent, setResetSent] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -30,20 +29,6 @@ export default function LoginPage() {
     }
     router.push("/home");
     router.refresh();
-  }
-
-  async function handleResetPassword() {
-    if (!email) {
-      setError("비밀번호를 찾으려면 먼저 이메일을 입력해주세요.");
-      return;
-    }
-    setError(null);
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) {
-      setError("비밀번호 재설정 메일 발송에 실패했습니다.");
-      return;
-    }
-    setResetSent(true);
   }
 
   return (
@@ -74,20 +59,11 @@ export default function LoginPage() {
         />
 
         {error && <p className="text-red-600 text-sm text-center">{error}</p>}
-        {resetSent && (
-          <p className="text-brand-600 text-sm text-center">
-            비밀번호 재설정 메일을 보냈습니다. 메일함을 확인해주세요.
-          </p>
-        )}
 
         <button type="submit" disabled={loading} className="btn-primary">
           {loading ? "로그인 중..." : "로그인"}
         </button>
       </form>
-
-      <button onClick={handleResetPassword} className="text-stone-500 text-sm mt-4 text-center underline">
-        비밀번호를 잊으셨나요?
-      </button>
 
       <div className="mt-10 text-center text-sm text-stone-500">
         아직 계정이 없으신가요?{" "}
