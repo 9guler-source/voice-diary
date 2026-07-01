@@ -1,32 +1,38 @@
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
-import { verifyGuardianToken } from "@/lib/guardian-session";
-import { createAdminClient } from "@/lib/supabase-admin";
+import { isGuardianEmail } from "@/lib/guardian-email";
 import GuardianLogoutButton from "./GuardianLogoutButton";
 
 export default async function GuardianLayout({ children }: { children: React.ReactNode }) {
-  // 세션 검증
-  const cookieStore = cookies();
-  const token = cookieStore.get("vd_guardian_session")?.value;
-  const payload = token ? verifyGuardianToken(token) : null;
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!payload) {
+  // 보호자 세션 검증 (일반 Supabase 세션 사용)
+  if (!user || !isGuardianEmail(user.email ?? "")) {
     redirect("/guardian-login");
   }
 
-  // 열람 대상 사용자 이름 조회
-  let userName = "";
-  try {
-    const admin = createAdminClient();
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("name")
-      .eq("id", payload.uid)
-      .maybeSingle();
-    userName = profile?.name ?? "";
-  } catch {
-    // admin 클라이언트 미설정 시 이름 없이 진행
+  // ① 보호자 본인 guardian 행 조회 (RLS: guardian_auth_id = auth.uid())
+  const { data: guardian } = await supabase
+    .from("guardians")
+    .select("user_id, name")
+    .eq("guardian_auth_id", user.id)
+    .maybeSingle();
+
+  if (!guardian) {
+    // DB에 없는 보호자 (삭제된 경우) → 강제 로그아웃
+    await supabase.auth.signOut();
+    redirect("/guardian-login");
   }
+
+  // ② 담당 사용자 이름 조회 (RLS: profiles_guardian_read 정책 적용)
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("name")
+    .eq("id", guardian.user_id)
+    .maybeSingle();
+
+  const userName = (profile as any)?.name ?? "";
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
@@ -40,7 +46,6 @@ export default async function GuardianLayout({ children }: { children: React.Rea
         </div>
         <GuardianLogoutButton />
       </div>
-
       <main className="flex-1 flex flex-col">{children}</main>
     </div>
   );
