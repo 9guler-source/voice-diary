@@ -22,23 +22,21 @@ function getStrength(pw: string): { score: number; label: string; color: string 
 export default function SignupPage() {
   const supabase = createClient();
 
-  // 사용자 정보
-  const [email, setEmail] = useState("");
-  const [birthDate, setBirthDate] = useState(""); // YYYYMMDD 형식
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
-  const [password2, setPassword2] = useState("");
+  const [email, setEmail]               = useState("");
+  const [birthDate, setBirthDate]       = useState("");
+  const [displayName, setDisplayName]   = useState("");
+  const [password, setPassword]         = useState("");
+  const [password2, setPassword2]       = useState("");
 
-  // 보호자 정보 (선택)
-  const [guardianEmail, setGuardianEmail] = useState("");
-  const [guardianName, setGuardianName] = useState("");
-  const [guardianBirthDate, setGuardianBirthDate] = useState(""); // YYYYMMDD 형식
-  const [guardianPin, setGuardianPin] = useState(""); // 4자리 숫자
+  const [guardianEmail, setGuardianEmail]         = useState("");
+  const [guardianName, setGuardianName]           = useState("");
+  const [guardianBirthDate, setGuardianBirthDate] = useState("");
+  const [guardianPin, setGuardianPin]             = useState("");
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmPopup, setConfirmPopup] = useState(false); // 이메일 인증 팝업
+  const [emailSentPopup, setEmailSentPopup] = useState(false);
 
   const strength = useMemo(() => getStrength(password), [password]);
   const mismatch = password2.length > 0 && password !== password2;
@@ -49,19 +47,15 @@ export default function SignupPage() {
     if (!parseBirthDate(birthDate)) return "생년월일 형식이 올바르지 않습니다. (예: 19510208)";
     if (password.length < 8) return "비밀번호는 8자 이상이어야 합니다.";
     if (password !== password2) return "비밀번호가 일치하지 않습니다.";
-
-    // 보호자 정보 — 하나라도 입력했으면 전체 필수
     const hasGuardian = guardianEmail || guardianBirthDate || guardianPin;
     if (hasGuardian) {
       if (!guardianEmail.trim()) return "보호자 이메일을 입력해주세요.";
-      if (!guardianBirthDate.trim()) return "보호자 생년월일을 입력해주세요. (예: 19910812)";
       if (!parseBirthDate(guardianBirthDate)) return "보호자 생년월일 형식이 올바르지 않습니다. (예: 19910812)";
-      if (!isValidPin(guardianPin)) return "비밀번호는 숫자 4자리이어야 합니다.";
+      if (!isValidPin(guardianPin)) return "보호자 비밀번호는 숫자 4자리이어야 합니다.";
     }
     return null;
   }
 
-  // 폼 제출 → 확인 팝업 표시
   function handleSubmitClick(e: React.FormEvent) {
     e.preventDefault();
     const err = validate();
@@ -70,7 +64,6 @@ export default function SignupPage() {
     setShowConfirm(true);
   }
 
-  // 확인 팝업에서 "맞습니다" → 실제 가입 진행
   async function handleConfirmed() {
     setShowConfirm(false);
     setLoading(true);
@@ -92,15 +85,17 @@ export default function SignupPage() {
     }
 
     if (data.session) {
+      const authUserId = data.session.user.id;
       const parsedBirth = parseBirthDate(birthDate)!;
 
-      // 생년월일 프로필 저장
-      await updateProfileBirthDate(parsedBirth);
+      // admin 클라이언트로 생년월일 저장 (쿠키 타이밍 문제 회피)
+      await updateProfileBirthDate(authUserId, parsedBirth);
 
       // 보호자 정보 있으면 함께 저장
       const hasGuardian = guardianEmail && guardianBirthDate && guardianPin;
       if (hasGuardian) {
         await registerGuardianAfterSignup(
+          authUserId,
           guardianEmail,
           guardianName || "보호자",
           parseBirthDate(guardianBirthDate)!,
@@ -114,11 +109,11 @@ export default function SignupPage() {
       window.location.href = "/home";
     } else {
       setLoading(false);
-      setConfirmPopup(true); // 이메일 인증 필요
+      setEmailSentPopup(true);
     }
   }
 
-  // 확인 팝업에 표시할 항목 구성
+  // 확인 팝업 항목 구성 (PIN은 plain text + highlight)
   const confirmItems = useMemo((): InfoItem[] => {
     const items: InfoItem[] = [
       { label: "이메일", value: email },
@@ -129,12 +124,14 @@ export default function SignupPage() {
       if (guardianBirthDate)
         items.push({ label: "보호자 생년월일", value: formatBirthDateKo(guardianBirthDate) || guardianBirthDate });
       if (guardianPin)
-        items.push({ label: "비밀번호(4자리)", value: guardianPin, sensitive: true });
+        items.push({ label: "보호자 비밀번호(4자리)", value: guardianPin, highlight: true });
     }
     return items;
   }, [email, birthDate, guardianEmail, guardianBirthDate, guardianPin]);
 
-  if (confirmPopup) {
+  const hasPin = !!guardianPin;
+
+  if (emailSentPopup) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
         <div className="card">
@@ -159,14 +156,10 @@ export default function SignupPage() {
 
         <div>
           <input
-            type="text"
-            required
-            placeholder="생년월일 (예: 19510208)"
+            type="text" required placeholder="생년월일 (예: 19510208)"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value.replace(/\D/g, "").slice(0, 8))}
-            className="input-field"
-            inputMode="numeric"
-            maxLength={8}
+            className="input-field" inputMode="numeric" maxLength={8}
           />
           {birthDate.length > 0 && !parseBirthDate(birthDate) && (
             <p className="text-xs text-amber-600 mt-1">8자리 숫자로 입력해주세요. 예: 19510208</p>
@@ -174,7 +167,7 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <input type="password" required placeholder="비밀번호 (8자 이상)" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field" autoComplete="new-password" />
+          <input type="password" required placeholder="로그인 비밀번호 (8자 이상)" value={password} onChange={(e) => setPassword(e.target.value)} className="input-field" autoComplete="new-password" />
           {password.length > 0 && (
             <div className="mt-2">
               <div className="h-1.5 w-full bg-stone-200 rounded-full overflow-hidden">
@@ -194,18 +187,14 @@ export default function SignupPage() {
         <div className="card !p-4 space-y-3">
           <p className="text-sm font-semibold text-stone-700">보호자 등록 (선택)</p>
           <p className="text-xs text-stone-400">나중에 설정에서도 추가할 수 있어요.</p>
-
           <input type="text" placeholder="보호자 이름 (선택)" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} className="input-field" />
           <input type="email" placeholder="보호자 이메일" value={guardianEmail} onChange={(e) => setGuardianEmail(e.target.value)} className="input-field" />
           <div>
             <input
-              type="text"
-              placeholder="보호자 생년월일 (예: 19910812)"
+              type="text" placeholder="보호자 생년월일 (예: 19910812)"
               value={guardianBirthDate}
               onChange={(e) => setGuardianBirthDate(e.target.value.replace(/\D/g, "").slice(0, 8))}
-              className="input-field"
-              inputMode="numeric"
-              maxLength={8}
+              className="input-field" inputMode="numeric" maxLength={8}
             />
             {guardianBirthDate.length > 0 && !parseBirthDate(guardianBirthDate) && (
               <p className="text-xs text-amber-600 mt-1">예: 19910812</p>
@@ -213,13 +202,11 @@ export default function SignupPage() {
           </div>
           <div>
             <input
-              type="password"
+              type="text"
               placeholder="보호자 로그인 비밀번호 (숫자 4자리)"
               value={guardianPin}
               onChange={(e) => setGuardianPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              className="input-field"
-              inputMode="numeric"
-              maxLength={4}
+              className="input-field" inputMode="numeric" maxLength={4}
             />
             {guardianPin.length > 0 && !isValidPin(guardianPin) && (
               <p className="text-xs text-amber-600 mt-1">숫자 4자리를 입력해주세요.</p>
@@ -239,12 +226,17 @@ export default function SignupPage() {
         <Link href="/login" className="text-brand-600 font-semibold">로그인</Link>
       </div>
 
-      {/* 입력 정보 전체 확인 팝업 */}
+      {/* 전체 정보 확인 팝업 */}
       {showConfirm && (
         <InfoConfirmModal
           title="입력하신 정보를 확인해주세요"
           message="아래 내용이 모두 정확한지 확인 후 가입을 진행해주세요."
           items={confirmItems}
+          warning={
+            hasPin
+              ? "보호자 비밀번호(4자리)를 꼭 기억하시거나 별도 비밀 유지되는 곳에 메모하세요!"
+              : undefined
+          }
           confirmLabel="모두 맞습니다, 가입하기"
           cancelLabel="수정하겠습니다"
           onConfirm={handleConfirmed}

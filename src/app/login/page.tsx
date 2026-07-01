@@ -95,6 +95,16 @@ export default function LoginPage() {
           회원가입
         </Link>
       </div>
+
+      <div className="mt-4 pt-4 border-t border-stone-200 text-center">
+        <Link
+          href="/guardian-login"
+          className="inline-flex items-center gap-2 text-sm text-stone-500 hover:text-brand-600"
+        >
+          <span>👁</span>
+          <span>보호자로 로그인 (열람 전용)</span>
+        </Link>
+      </div>
     </div>
   );
 }
