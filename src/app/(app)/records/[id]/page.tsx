@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase-server";
+﻿import { createClient } from "@/lib/supabase-server";
 import { getOrCreateProfile } from "@/lib/profile";
 import { redirect } from "next/navigation";
 import LocalTime from "@/components/LocalTime";
@@ -25,7 +25,7 @@ export default async function SessionDetailPage({ params }: { params: { id: stri
   if (!session || session.user_id !== profile.id) {
     return (
       <div className="flex-1 flex items-center justify-center px-6 text-center">
-        <p className="text-stone-400">기록??찾을 ???�습?�다.</p>
+        <p className="text-stone-400">기록을 찾을 수 없습니다.</p>
       </div>
     );
   }
@@ -58,7 +58,7 @@ export default async function SessionDetailPage({ params }: { params: { id: stri
         <h1 className="text-lg font-bold text-stone-800">
           <LocalTime iso={session.recorded_at} />
         </h1>
-        <p className="text-xs text-stone-400 mt-1">{withUrls.length}�?문항</p>
+        <p className="text-xs text-stone-400 mt-1">{withUrls.length}개 문항</p>
       </div>
       <SessionPlayer items={withUrls} />
     </div>
