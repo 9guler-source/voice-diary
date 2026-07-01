@@ -35,7 +35,7 @@ export async function guardianLogin(
 
   if (rpcError) {
     console.error("[voice-diary] guardianLogin rpc 오류:", rpcError.message);
-    return { ok: false, error: `확인 중 오류가 발생했습니다. [${rpcError.message}]` };
+    return { ok: false, error: '입력하신 정보를 다시 확인해주세요.' };
   }
 
   const row = Array.isArray(data) ? data[0] : data;

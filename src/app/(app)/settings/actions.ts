@@ -98,7 +98,7 @@ export async function addGuardian(formData: FormData) {
     // 롤백: 생성한 Auth 계정 삭제
     await admin.auth.admin.deleteUser(authData.user.id);
     console.error("[voice-diary] 보호자 insert 실패 (롤백됨):", insertError.message);
-    return { error: `보호자 추가 실패 [${insertError.message} / code: ${insertError.code}]` };
+    return { error: '보호자 추가에 실패했습니다. 잠시 후 다시 시도해주세요.' };
   }
 
   revalidatePath("/settings");
